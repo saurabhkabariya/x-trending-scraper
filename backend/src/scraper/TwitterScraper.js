@@ -352,30 +352,80 @@ class TwitterScraper {
       const nextButton = await this.driver.findElement(By.xpath('//span[text()="Next"]'));
       await nextButton.click();
       
-      const passwordField = await this.driver.wait(
-        until.elementLocated(By.css('input[type="password"]')),
-        10000
-      );
-      await passwordField.sendKeys(process.env.X_PASSWORD);
-      
-      const loginButton = await this.driver.findElement(By.xpath('//span[text()="Log in"]'));
-      await loginButton.click();
-      
+      // Wait for next step and determine what X is asking for
       await this.driver.sleep(3000);
       
       try {
-        const emailField = await this.driver.findElement(By.css('input[data-testid="ocfEnterTextTextInput"]'));
-        if (emailField && process.env.X_EMAIL) {
-          console.log('Email verification requested, providing email...');
+        // Check if X is asking for email verification first (suspicious login)
+        // Try multiple selectors for email verification
+        let emailField = null;
+        const emailSelectors = [
+          'input[data-testid="ocfEnterTextTextInput"]',
+          'input[name="text"]',
+          'input[autocomplete="email"]',
+          'input[type="email"]',
+          'input[placeholder*="email"]',
+          'input[placeholder*="Email"]'
+        ];
+        
+        for (const selector of emailSelectors) {
+          try {
+            emailField = await this.driver.findElement(By.css(selector));
+            if (emailField) {
+              console.log(`Found email field with selector: ${selector}`);
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (emailField) {
+          console.log('Email verification requested due to suspicious login, providing email...');
+          
+          if (!process.env.X_EMAIL) {
+            throw new Error('X_EMAIL environment variable is required for email verification');
+          }
+          
           await emailField.sendKeys(process.env.X_EMAIL);
           
+          // Click Next after email
           const nextEmailButton = await this.driver.findElement(By.xpath('//span[text()="Next"]'));
           await nextEmailButton.click();
-          await this.driver.sleep(2000);
+          await this.driver.sleep(3000);
+          
+          // Now look for password field after email verification
+          const passwordFieldAfterEmail = await this.driver.wait(
+            until.elementLocated(By.css('input[type="password"]')),
+            10000
+          );
+          await passwordFieldAfterEmail.sendKeys(process.env.X_PASSWORD);
+          
+          // Click Log in button
+          const loginButtonAfterEmail = await this.driver.findElement(By.xpath('//span[text()="Log in"]'));
+          await loginButtonAfterEmail.click();
         }
-      } catch (e) {
+      } catch (emailError) {
+        // Email verification not requested, look for password field directly
+        console.log('No email verification required, proceeding with password...');
+        
+        try {
+          const passwordField = await this.driver.wait(
+            until.elementLocated(By.css('input[type="password"]')),
+            10000
+          );
+          await passwordField.sendKeys(process.env.X_PASSWORD);
+          
+          // Click Log in button
+          const loginButton = await this.driver.findElement(By.xpath('//span[text()="Log in"]'));
+          await loginButton.click();
+        } catch (passwordError) {
+          console.error('Could not find password field:', passwordError.message);
+          throw new Error('Login flow failed: Could not proceed after username');
+        }
       }
       
+      // Wait for home page to load
       await this.driver.wait(
         until.urlContains('home'),
         15000
