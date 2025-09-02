@@ -12,11 +12,13 @@ class TwitterScraper {
 
     this.ensureChromeUserDataDir();
 
+    // Basic options
     this.options.addArguments('--no-sandbox');
     this.options.addArguments('--disable-dev-shm-usage');
     this.options.addArguments('--disable-blink-features=AutomationControlled');
-    this.options.addArguments('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    this.options.addArguments('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
+    // Performance and stability options
     this.options.addArguments('--disable-extensions');
     this.options.addArguments('--disable-plugins');
     this.options.addArguments('--disable-images');
@@ -25,7 +27,21 @@ class TwitterScraper {
     this.options.addArguments('--disable-renderer-backgrounding');
     this.options.addArguments('--disable-features=TranslateUI');
     this.options.addArguments('--disable-default-apps');
+    this.options.addArguments('--disable-web-security');
+    this.options.addArguments('--disable-features=VizDisplayCompositor');
+    this.options.addArguments('--disable-ipc-flooding-protection');
     
+    // Memory and GPU optimizations
+    this.options.addArguments('--memory-pressure-off');
+    this.options.addArguments('--max_old_space_size=4096');
+    this.options.addArguments('--disable-gpu');
+    this.options.addArguments('--disable-gpu-sandbox');
+    
+    // Network and security
+    this.options.addArguments('--ignore-ssl-errors=yes');
+    this.options.addArguments('--ignore-certificate-errors');
+    
+    // User data directory for session persistence
     try {
       this.options.addArguments('--user-data-dir=./chrome-user-data');
       this.options.addArguments('--profile-directory=Default');
@@ -42,9 +58,7 @@ class TwitterScraper {
       const service = new chrome.ServiceBuilder(process.env.CHROMEDRIVER_PATH);
       this.service = service;
     }
-  }
-
-  ensureChromeUserDataDir() {
+  }  ensureChromeUserDataDir() {
     try {
       const userDataDir = path.join(process.cwd(), 'chrome-user-data');
       if (!fs.existsSync(userDataDir)) {
@@ -302,31 +316,47 @@ class TwitterScraper {
 
   async checkIfLoggedIn() {
     try {
+      console.log('Checking if user is already logged in...');
       await this.driver.get('https://twitter.com/home');
-      await this.driver.sleep(3000);
+      await this.driver.sleep(5000); // Wait longer for page load
       
       const currentUrl = await this.driver.getCurrentUrl();
+      console.log('Current URL after navigation:', currentUrl);
       
       if (currentUrl.includes('/home') && !currentUrl.includes('/login') && !currentUrl.includes('/i/flow/login')) {
-
+        // Try multiple methods to verify login
         try {
           await this.driver.findElement(By.css('[aria-label*="Tweet"]'));
-          console.log('User already logged in, skipping login process');
+          console.log('✅ User already logged in (found Tweet button)');
           return true;
         } catch {
           try {
             await this.driver.findElement(By.css('[data-testid="SideNav_AccountSwitcher_Button"]'));
-            console.log('User already logged in, skipping login process');
+            console.log('✅ User already logged in (found account switcher)');
             return true;
           } catch {
-            return false;
+            try {
+              await this.driver.findElement(By.css('[data-testid="SideNav_NewTweet_Button"]'));
+              console.log('✅ User already logged in (found new tweet button)');
+              return true;
+            } catch {
+              try {
+                await this.driver.findElement(By.css('[data-testid="primaryColumn"]'));
+                console.log('✅ User already logged in (found primary column)');
+                return true;
+              } catch {
+                console.log('❌ Login verification failed - no indicators found');
+                return false;
+              }
+            }
           }
         }
       }
       
+      console.log('❌ User not logged in - redirected to login page');
       return false;
     } catch (error) {
-      console.log('Could not verify login status, proceeding with login');
+      console.log('⚠️ Could not verify login status, proceeding with login. Error:', error.message);
       return false;
     }
   }
@@ -338,26 +368,30 @@ class TwitterScraper {
         return;
       }
       
-      console.log('User not logged in, attempting login...');
+      console.log('🔑 User not logged in, attempting login...');
       
-      
+      // Navigate to login page
       await this.driver.get('https://twitter.com/i/flow/login');
+      await this.driver.sleep(3000);
       
+      // Enter username
+      console.log('📝 Entering username...');
       const usernameField = await this.driver.wait(
         until.elementLocated(By.css('input[autocomplete="username"]')),
-        10000
+        15000
       );
+      await usernameField.clear();
       await usernameField.sendKeys(process.env.X_USERNAME);
       
       const nextButton = await this.driver.findElement(By.xpath('//span[text()="Next"]'));
       await nextButton.click();
       
       // Wait for next step and determine what X is asking for
-      await this.driver.sleep(3000);
+      await this.driver.sleep(5000);
       
       try {
         // Check if X is asking for email verification first (suspicious login)
-        // Try multiple selectors for email verification
+        console.log('🔍 Checking for email verification requirement...');
         let emailField = null;
         const emailSelectors = [
           'input[data-testid="ocfEnterTextTextInput"]',
@@ -372,7 +406,7 @@ class TwitterScraper {
           try {
             emailField = await this.driver.findElement(By.css(selector));
             if (emailField) {
-              console.log(`Found email field with selector: ${selector}`);
+              console.log(`✅ Found email field with selector: ${selector}`);
               break;
             }
           } catch (e) {
@@ -381,24 +415,27 @@ class TwitterScraper {
         }
         
         if (emailField) {
-          console.log('Email verification requested due to suspicious login, providing email...');
+          console.log('📧 Email verification requested due to suspicious login, providing email...');
           
           if (!process.env.X_EMAIL) {
             throw new Error('X_EMAIL environment variable is required for email verification');
           }
           
+          await emailField.clear();
           await emailField.sendKeys(process.env.X_EMAIL);
           
           // Click Next after email
           const nextEmailButton = await this.driver.findElement(By.xpath('//span[text()="Next"]'));
           await nextEmailButton.click();
-          await this.driver.sleep(3000);
+          await this.driver.sleep(5000);
           
           // Now look for password field after email verification
+          console.log('🔒 Looking for password field after email verification...');
           const passwordFieldAfterEmail = await this.driver.wait(
             until.elementLocated(By.css('input[type="password"]')),
-            10000
+            15000
           );
+          await passwordFieldAfterEmail.clear();
           await passwordFieldAfterEmail.sendKeys(process.env.X_PASSWORD);
           
           // Click Log in button
@@ -407,34 +444,72 @@ class TwitterScraper {
         }
       } catch (emailError) {
         // Email verification not requested, look for password field directly
-        console.log('No email verification required, proceeding with password...');
+        console.log('ℹ️ No email verification required, proceeding with password...');
         
         try {
+          console.log('🔒 Looking for password field...');
           const passwordField = await this.driver.wait(
             until.elementLocated(By.css('input[type="password"]')),
-            10000
+            15000
           );
+          await passwordField.clear();
           await passwordField.sendKeys(process.env.X_PASSWORD);
           
           // Click Log in button
           const loginButton = await this.driver.findElement(By.xpath('//span[text()="Log in"]'));
           await loginButton.click();
         } catch (passwordError) {
-          console.error('Could not find password field:', passwordError.message);
+          console.error('❌ Could not find password field:', passwordError.message);
+          
+          // Try to capture what's on the page for debugging
+          const currentUrl = await this.driver.getCurrentUrl();
+          const pageTitle = await this.driver.getTitle();
+          console.log(`🔍 Debug info - URL: ${currentUrl}, Title: ${pageTitle}`);
+          
           throw new Error('Login flow failed: Could not proceed after username');
         }
       }
       
-      // Wait for home page to load
-      await this.driver.wait(
-        until.urlContains('home'),
-        15000
-      );
-      
-      console.log('Successfully logged in to X');
+      // Wait for home page to load with extended timeout
+      console.log('⏳ Waiting for login to complete...');
+      try {
+        await this.driver.wait(
+          until.urlContains('home'),
+          30000  // Increased timeout to 30 seconds
+        );
+        console.log('✅ Successfully logged in to X');
+      } catch (timeoutError) {
+        // Check if we're actually logged in by looking for other indicators
+        const currentUrl = await this.driver.getCurrentUrl();
+        console.log('⚠️ Login timeout, checking current URL:', currentUrl);
+        
+        // Check for alternative login success indicators
+        if (currentUrl.includes('home') || currentUrl.includes('explore') || (currentUrl.includes('twitter.com') && !currentUrl.includes('login'))) {
+          console.log('✅ Login appears successful despite timeout');
+        } else {
+          // Try to detect specific error conditions
+          try {
+            const errorElements = await this.driver.findElements(By.css('[data-testid="error"], .error, [role="alert"]'));
+            if (errorElements.length > 0) {
+              const errorText = await errorElements[0].getText();
+              throw new Error(`Login failed with error: ${errorText}`);
+            }
+          } catch {
+            // No error elements found
+          }
+          
+          // Check if we're stuck on a verification page
+          const pageTitle = await this.driver.getTitle();
+          if (pageTitle.includes('verification') || pageTitle.includes('Verification')) {
+            throw new Error('Login failed: Account requires additional verification. Please login manually first.');
+          }
+          
+          throw new Error(`Login failed: Still on login page after timeout. Current URL: ${currentUrl}`);
+        }
+      }
       
     } catch (error) {
-      console.error('Login failed:', error.message);
+      console.error('❌ Login failed:', error.message);
       throw new Error(`X login failed: ${error.message}`);
     }
   }
