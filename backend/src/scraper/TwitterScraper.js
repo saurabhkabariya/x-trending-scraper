@@ -595,6 +595,81 @@ class TwitterScraper {
           }
           
           await loginButtonAfterEmail.click();
+          
+          // Wait a moment for potential post-password security checks
+          await this.driver.sleep(3000);
+          
+          // Check if Twitter is asking for additional email verification after password (even after initial email verification)
+          console.log('🔍 Checking for secondary post-password email verification...');
+          try {
+            const secondaryEmailSelectors = [
+              'input[data-testid="ocfEnterTextTextInput"]',
+              'input[name="text"]',
+              'input[autocomplete="email"]',
+              'input[type="email"]',
+              'input[placeholder*="email"]',
+              'input[placeholder*="Email"]'
+            ];
+            
+            let secondaryEmailField = null;
+            for (const selector of secondaryEmailSelectors) {
+              try {
+                const field = await this.driver.findElement(By.css(selector));
+                if (field && await field.isDisplayed()) {
+                  secondaryEmailField = field;
+                  console.log(`✅ Found secondary email field with selector: ${selector}`);
+                  break;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+            
+            if (secondaryEmailField) {
+              console.log('📧 Secondary email verification requested, providing email again...');
+              
+              await secondaryEmailField.clear();
+              await secondaryEmailField.sendKeys(process.env.X_EMAIL);
+              
+              // Click Next/Continue after secondary email
+              let secondaryNextButton = null;
+              const nextButtonSelectors = [
+                '//span[text()="Next"]',
+                '//span[text()="Continue"]',
+                '//span[text()="Verify"]',
+                '//button[@data-testid="ocfEnterTextNextButton"]',
+                '//div[@data-testid="ocfEnterTextNextButton"]',
+                '//span[contains(text(), "Next")]',
+                '//span[contains(text(), "Continue")]',
+                '//button[contains(text(), "Next")]',
+                '//button[contains(text(), "Continue")]'
+              ];
+              
+              for (const selector of nextButtonSelectors) {
+                try {
+                  secondaryNextButton = await this.driver.findElement(By.xpath(selector));
+                  if (secondaryNextButton && await secondaryNextButton.isDisplayed()) {
+                    console.log(`✅ Found secondary Next/Continue button with selector: ${selector}`);
+                    break;
+                  }
+                } catch (e) {
+                  continue;
+                }
+              }
+              
+              if (secondaryNextButton) {
+                await secondaryNextButton.click();
+                console.log('✅ Successfully handled secondary email verification');
+                await this.driver.sleep(3000);
+              } else {
+                console.log('⚠️ Could not find Next/Continue button after secondary email entry');
+              }
+            } else {
+              console.log('ℹ️ No secondary email verification required');
+            }
+          } catch (secondaryEmailError) {
+            console.log('ℹ️ Secondary email verification check failed, continuing...', secondaryEmailError.message);
+          }
         } catch (emailNextError) {
           console.error('❌ Failed to proceed after email verification:', emailNextError.message);
           throw new Error('Failed to complete email verification step');
@@ -672,6 +747,85 @@ class TwitterScraper {
           }
           
           await loginButton.click();
+          
+          // Wait a moment for potential post-password security checks
+          await this.driver.sleep(3000);
+          
+          // Check if Twitter is asking for additional email verification after password
+          console.log('🔍 Checking for post-username-verification email verification...');
+          try {
+            const postUsernameEmailSelectors = [
+              'input[data-testid="ocfEnterTextTextInput"]',
+              'input[name="text"]',
+              'input[autocomplete="email"]',
+              'input[type="email"]',
+              'input[placeholder*="email"]',
+              'input[placeholder*="Email"]'
+            ];
+            
+            let postUsernameEmailField = null;
+            for (const selector of postUsernameEmailSelectors) {
+              try {
+                const field = await this.driver.findElement(By.css(selector));
+                if (field && await field.isDisplayed()) {
+                  postUsernameEmailField = field;
+                  console.log(`✅ Found post-username email field with selector: ${selector}`);
+                  break;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+            
+            if (postUsernameEmailField) {
+              console.log('📧 Email verification requested after username flow, providing email...');
+              
+              if (!process.env.X_EMAIL) {
+                throw new Error('X_EMAIL environment variable is required for post-username email verification');
+              }
+              
+              await postUsernameEmailField.clear();
+              await postUsernameEmailField.sendKeys(process.env.X_EMAIL);
+              
+              // Click Next/Continue after email
+              let nextButton = null;
+              const nextButtonSelectors = [
+                '//span[text()="Next"]',
+                '//span[text()="Continue"]',
+                '//span[text()="Verify"]',
+                '//button[@data-testid="ocfEnterTextNextButton"]',
+                '//div[@data-testid="ocfEnterTextNextButton"]',
+                '//span[contains(text(), "Next")]',
+                '//span[contains(text(), "Continue")]',
+                '//button[contains(text(), "Next")]',
+                '//button[contains(text(), "Continue")]'
+              ];
+              
+              for (const selector of nextButtonSelectors) {
+                try {
+                  nextButton = await this.driver.findElement(By.xpath(selector));
+                  if (nextButton && await nextButton.isDisplayed()) {
+                    console.log(`✅ Found Next/Continue button with selector: ${selector}`);
+                    break;
+                  }
+                } catch (e) {
+                  continue;
+                }
+              }
+              
+              if (nextButton) {
+                await nextButton.click();
+                console.log('✅ Successfully handled post-username email verification');
+                await this.driver.sleep(3000);
+              } else {
+                console.log('⚠️ Could not find Next/Continue button after email entry');
+              }
+            } else {
+              console.log('ℹ️ No post-username email verification required');
+            }
+          } catch (postUsernameEmailError) {
+            console.log('ℹ️ Post-username email verification check failed, continuing...', postUsernameEmailError.message);
+          }
         } catch (usernameNextError) {
           console.error('❌ Failed to proceed after username verification:', usernameNextError.message);
           throw new Error('Failed to complete username verification step');
@@ -712,10 +866,191 @@ class TwitterScraper {
           }
           
           await loginButton.click();
+          
+          // Wait a moment for potential post-password security checks
+          await this.driver.sleep(3000);
+          
+          // Check if Twitter is asking for additional email verification after password
+          console.log('🔍 Checking for post-password email verification...');
+          try {
+            const postPasswordEmailSelectors = [
+              'input[data-testid="ocfEnterTextTextInput"]',
+              'input[name="text"]',
+              'input[autocomplete="email"]',
+              'input[type="email"]',
+              'input[placeholder*="email"]',
+              'input[placeholder*="Email"]'
+            ];
+            
+            let postPasswordEmailField = null;
+            for (const selector of postPasswordEmailSelectors) {
+              try {
+                const field = await this.driver.findElement(By.css(selector));
+                if (field && await field.isDisplayed()) {
+                  postPasswordEmailField = field;
+                  console.log(`✅ Found post-password email field with selector: ${selector}`);
+                  break;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+            
+            if (postPasswordEmailField) {
+              console.log('📧 Additional email verification requested after password, providing email...');
+              
+              if (!process.env.X_EMAIL) {
+                throw new Error('X_EMAIL environment variable is required for post-password email verification');
+              }
+              
+              await postPasswordEmailField.clear();
+              await postPasswordEmailField.sendKeys(process.env.X_EMAIL);
+              
+              // Click Next/Continue after email
+              let nextButton = null;
+              const nextButtonSelectors = [
+                '//span[text()="Next"]',
+                '//span[text()="Continue"]',
+                '//span[text()="Verify"]',
+                '//button[@data-testid="ocfEnterTextNextButton"]',
+                '//div[@data-testid="ocfEnterTextNextButton"]',
+                '//span[contains(text(), "Next")]',
+                '//span[contains(text(), "Continue")]',
+                '//button[contains(text(), "Next")]',
+                '//button[contains(text(), "Continue")]'
+              ];
+              
+              for (const selector of nextButtonSelectors) {
+                try {
+                  nextButton = await this.driver.findElement(By.xpath(selector));
+                  if (nextButton && await nextButton.isDisplayed()) {
+                    console.log(`✅ Found Next/Continue button with selector: ${selector}`);
+                    break;
+                  }
+                } catch (e) {
+                  continue;
+                }
+              }
+              
+              if (nextButton) {
+                await nextButton.click();
+                console.log('✅ Successfully handled post-password email verification');
+                await this.driver.sleep(3000);
+              } else {
+                console.log('⚠️ Could not find Next/Continue button after email entry, attempting to proceed...');
+              }
+            } else {
+              console.log('ℹ️ No post-password email verification required');
+            }
+          } catch (postPasswordError) {
+            console.log('ℹ️ Post-password email verification check failed, continuing...', postPasswordError.message);
+          }
         } catch (loginClickError) {
           console.error('❌ Failed to click login button:', loginClickError.message);
           throw new Error('Failed to complete password entry step');
         }
+      }
+      
+      // Final comprehensive security check before waiting for home page
+      console.log('🔍 Performing final security verification check...');
+      await this.driver.sleep(2000);
+      
+      try {
+        // Check for any remaining verification steps
+        const finalVerificationSelectors = [
+          'input[data-testid="ocfEnterTextTextInput"]',
+          'input[name="text"]',
+          'input[autocomplete="email"]',
+          'input[type="email"]',
+          'input[placeholder*="email"]',
+          'input[placeholder*="Email"]',
+          'input[placeholder*="verification"]',
+          'input[placeholder*="code"]'
+        ];
+        
+        let finalVerificationField = null;
+        for (const selector of finalVerificationSelectors) {
+          try {
+            const field = await this.driver.findElement(By.css(selector));
+            if (field && await field.isDisplayed()) {
+              finalVerificationField = field;
+              console.log(`✅ Found final verification field with selector: ${selector}`);
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (finalVerificationField) {
+          // Check what type of verification is being requested
+          const pageText = await this.driver.getPageSource();
+          const isEmailVerification = pageText.toLowerCase().includes('email') && !pageText.toLowerCase().includes('code');
+          const isCodeVerification = pageText.toLowerCase().includes('code') || pageText.toLowerCase().includes('verification');
+          
+          if (isEmailVerification && !isCodeVerification) {
+            console.log('📧 Final email verification requested, providing email...');
+            
+            if (!process.env.X_EMAIL) {
+              console.log('⚠️ X_EMAIL not available for final verification, attempting to skip...');
+            } else {
+              await finalVerificationField.clear();
+              await finalVerificationField.sendKeys(process.env.X_EMAIL);
+              
+              // Click Next/Continue
+              const finalNextSelectors = [
+                '//span[text()="Next"]',
+                '//span[text()="Continue"]',
+                '//span[text()="Verify"]',
+                '//span[text()="Skip"]',
+                '//button[@data-testid="ocfEnterTextNextButton"]',
+                '//div[@data-testid="ocfEnterTextNextButton"]',
+                '//span[contains(text(), "Next")]',
+                '//span[contains(text(), "Continue")]',
+                '//span[contains(text(), "Skip")]'
+              ];
+              
+              let finalNextButton = null;
+              for (const selector of finalNextSelectors) {
+                try {
+                  finalNextButton = await this.driver.findElement(By.xpath(selector));
+                  if (finalNextButton && await finalNextButton.isDisplayed()) {
+                    console.log(`✅ Found final Next/Continue button with selector: ${selector}`);
+                    break;
+                  }
+                } catch (e) {
+                  continue;
+                }
+              }
+              
+              if (finalNextButton) {
+                await finalNextButton.click();
+                console.log('✅ Successfully handled final email verification');
+                await this.driver.sleep(3000);
+              }
+            }
+          } else if (isCodeVerification) {
+            console.log('📱 2FA or verification code requested');
+            console.log('⚠️ 2FA/Verification code handling not implemented - manual intervention may be required');
+            console.log('ℹ️ Please disable 2FA on your X account or handle verification manually');
+            
+            // Look for skip option
+            try {
+              const skipButton = await this.driver.findElement(By.xpath('//span[text()="Skip"]'));
+              if (skipButton && await skipButton.isDisplayed()) {
+                console.log('🚫 Found Skip button, attempting to skip verification...');
+                await skipButton.click();
+                await this.driver.sleep(3000);
+              }
+            } catch (skipError) {
+              console.log('ℹ️ No skip option found for verification');
+            }
+          }
+        } else {
+          console.log('ℹ️ No additional verification steps found');
+        }
+      } catch (finalVerificationError) {
+        console.log('ℹ️ Final verification check failed, continuing...', finalVerificationError.message);
       }
       
       // Wait for home page to load with extended timeout
