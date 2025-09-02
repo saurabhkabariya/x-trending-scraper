@@ -389,10 +389,37 @@ class TwitterScraper {
       // Wait for next step and determine what X is asking for
       await this.driver.sleep(5000);
       
+      // First, let's check what's actually on the page
+      console.log('🔍 Analyzing login flow step...');
+      
+      // Check for multiple possible next steps with timeout
+      const possibleInputs = [];
+      const maxWaitTime = 10000; // 10 seconds max wait
+      const startTime = Date.now();
+      
+      // Check for password field first (most common case)
       try {
-        // Check if X is asking for email verification first (suspicious login)
-        console.log('🔍 Checking for email verification requirement...');
-        let emailField = null;
+        await this.driver.wait(async () => {
+          try {
+            const passwordField = await this.driver.findElement(By.css('input[type="password"]'));
+            if (passwordField && await passwordField.isDisplayed()) {
+              possibleInputs.push({ type: 'password', element: passwordField });
+              console.log('✅ Found password field');
+              return true;
+            }
+          } catch (e) {
+            // Continue checking
+          }
+          
+          // Check if we've waited too long
+          return Date.now() - startTime > maxWaitTime;
+        }, 2000);
+      } catch (e) {
+        console.log('ℹ️ Password field not found or not visible');
+      }
+      
+      // Check for email verification field
+      try {
         const emailSelectors = [
           'input[data-testid="ocfEnterTextTextInput"]',
           'input[name="text"]',
@@ -402,10 +429,12 @@ class TwitterScraper {
           'input[placeholder*="Email"]'
         ];
         
+        let emailField = null;
         for (const selector of emailSelectors) {
           try {
-            emailField = await this.driver.findElement(By.css(selector));
-            if (emailField) {
+            const field = await this.driver.findElement(By.css(selector));
+            if (field && await field.isDisplayed()) {
+              emailField = field;
               console.log(`✅ Found email field with selector: ${selector}`);
               break;
             }
@@ -415,17 +444,118 @@ class TwitterScraper {
         }
         
         if (emailField) {
-          console.log('📧 Email verification requested due to suspicious login, providing email...');
+          possibleInputs.push({ type: 'email', element: emailField });
+        }
+      } catch (e) {
+        console.log('ℹ️ Email field not found or not visible');
+      }
+      
+      // Check for username verification field (in case of unusual verification)
+      try {
+        const usernameVerificationField = await this.driver.findElement(By.css('input[data-testid="ocfEnterTextTextInput"]'));
+        if (usernameVerificationField && await usernameVerificationField.isDisplayed()) {
+          // Check if it's asking for username instead of email
+          const pageText = await this.driver.getPageSource();
+          if (pageText.toLowerCase().includes('username') && !pageText.toLowerCase().includes('email')) {
+            possibleInputs.push({ type: 'username_verification', element: usernameVerificationField });
+            console.log('✅ Found username verification field');
+          }
+        }
+      } catch (e) {
+        console.log('ℹ️ Username verification field not found');
+      }
+      
+      // Process based on what we found
+      if (possibleInputs.length === 0) {
+        console.log('⚠️ No recognized input fields found, attempting fallback approach...');
+        
+        // Fallback: Try to find any visible input and determine its purpose
+        try {
+          const allInputs = await this.driver.findElements(By.css('input[type="text"], input[type="email"], input[type="password"], input[name="text"]'));
+          let fallbackInput = null;
           
-          if (!process.env.X_EMAIL) {
-            throw new Error('X_EMAIL environment variable is required for email verification');
+          for (const input of allInputs) {
+            try {
+              if (await input.isDisplayed()) {
+                fallbackInput = input;
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
           }
           
-          await emailField.clear();
-          await emailField.sendKeys(process.env.X_EMAIL);
+          if (fallbackInput) {
+            const inputType = await fallbackInput.getAttribute('type');
+            const inputName = await fallbackInput.getAttribute('name');
+            const inputPlaceholder = await fallbackInput.getAttribute('placeholder');
+            
+            console.log(`🔍 Found fallback input - type: ${inputType}, name: ${inputName}, placeholder: ${inputPlaceholder}`);
+            
+            if (inputType === 'password') {
+              possibleInputs.push({ type: 'password', element: fallbackInput });
+            } else {
+              // Assume it's asking for email or username verification
+              possibleInputs.push({ type: 'email', element: fallbackInput });
+            }
+          }
+        } catch (fallbackError) {
+          console.error('❌ Fallback input detection failed:', fallbackError.message);
+        }
+        
+        if (possibleInputs.length === 0) {
+          const currentUrl = await this.driver.getCurrentUrl();
+          const pageTitle = await this.driver.getTitle();
+          const pageSource = await this.driver.getPageSource();
           
-          // Click Next after email
-          const nextEmailButton = await this.driver.findElement(By.xpath('//span[text()="Next"]'));
+          console.log(`🔍 Debug info - URL: ${currentUrl}, Title: ${pageTitle}`);
+          console.log('🔍 Page contains login?', pageSource.includes('login') || pageSource.includes('Log in'));
+          console.log('🔍 Page contains password?', pageSource.includes('password') || pageSource.includes('Password'));
+          
+          throw new Error('Login flow failed: No recognizable input fields found after username');
+        }
+      }
+      
+      // Handle the appropriate input type
+      const inputToUse = possibleInputs[0]; // Use the first valid input found
+      
+      if (inputToUse.type === 'email') {
+        console.log('📧 Email verification requested, providing email...');
+        
+        if (!process.env.X_EMAIL) {
+          throw new Error('X_EMAIL environment variable is required for email verification');
+        }
+        
+        await inputToUse.element.clear();
+        await inputToUse.element.sendKeys(process.env.X_EMAIL);
+        
+        // Click Next after email
+        try {
+          let nextEmailButton = null;
+          const nextButtonSelectors = [
+            '//span[text()="Next"]',
+            '//button[@data-testid="ocfEnterTextNextButton"]',
+            '//div[@data-testid="ocfEnterTextNextButton"]',
+            '//span[contains(text(), "Next")]',
+            '//button[contains(text(), "Next")]'
+          ];
+          
+          for (const selector of nextButtonSelectors) {
+            try {
+              nextEmailButton = await this.driver.findElement(By.xpath(selector));
+              if (nextEmailButton && await nextEmailButton.isDisplayed()) {
+                console.log(`✅ Found Next button with selector: ${selector}`);
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+          
+          if (!nextEmailButton) {
+            throw new Error('Could not find Next button after email entry');
+          }
+          
           await nextEmailButton.click();
           await this.driver.sleep(5000);
           
@@ -439,15 +569,75 @@ class TwitterScraper {
           await passwordFieldAfterEmail.sendKeys(process.env.X_PASSWORD);
           
           // Click Log in button
-          const loginButtonAfterEmail = await this.driver.findElement(By.xpath('//span[text()="Log in"]'));
+          let loginButtonAfterEmail = null;
+          const loginButtonSelectors = [
+            '//span[text()="Log in"]',
+            '//div[@data-testid="LoginForm_Login_Button"]',
+            '//button[@data-testid="LoginForm_Login_Button"]',
+            '//span[contains(text(), "Log in")]',
+            '//button[contains(text(), "Log in")]'
+          ];
+          
+          for (const selector of loginButtonSelectors) {
+            try {
+              loginButtonAfterEmail = await this.driver.findElement(By.xpath(selector));
+              if (loginButtonAfterEmail && await loginButtonAfterEmail.isDisplayed()) {
+                console.log(`✅ Found login button with selector: ${selector}`);
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+          
+          if (!loginButtonAfterEmail) {
+            throw new Error('Could not find login button after email verification');
+          }
+          
           await loginButtonAfterEmail.click();
+        } catch (emailNextError) {
+          console.error('❌ Failed to proceed after email verification:', emailNextError.message);
+          throw new Error('Failed to complete email verification step');
         }
-      } catch (emailError) {
-        // Email verification not requested, look for password field directly
-        console.log('ℹ️ No email verification required, proceeding with password...');
         
+      } else if (inputToUse.type === 'username_verification') {
+        console.log('👤 Username verification requested, providing username...');
+        
+        await inputToUse.element.clear();
+        await inputToUse.element.sendKeys(process.env.X_USERNAME);
+        
+        // Click Next after username verification
         try {
-          console.log('🔒 Looking for password field...');
+          let nextButton = null;
+          const nextButtonSelectors = [
+            '//span[text()="Next"]',
+            '//button[@data-testid="ocfEnterTextNextButton"]',
+            '//div[@data-testid="ocfEnterTextNextButton"]',
+            '//span[contains(text(), "Next")]',
+            '//button[contains(text(), "Next")]'
+          ];
+          
+          for (const selector of nextButtonSelectors) {
+            try {
+              nextButton = await this.driver.findElement(By.xpath(selector));
+              if (nextButton && await nextButton.isDisplayed()) {
+                console.log(`✅ Found Next button with selector: ${selector}`);
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+          
+          if (!nextButton) {
+            throw new Error('Could not find Next button after username verification');
+          }
+          
+          await nextButton.click();
+          await this.driver.sleep(5000);
+          
+          // Now look for password field
+          console.log('🔒 Looking for password field after username verification...');
           const passwordField = await this.driver.wait(
             until.elementLocated(By.css('input[type="password"]')),
             15000
@@ -456,17 +646,75 @@ class TwitterScraper {
           await passwordField.sendKeys(process.env.X_PASSWORD);
           
           // Click Log in button
-          const loginButton = await this.driver.findElement(By.xpath('//span[text()="Log in"]'));
+          let loginButton = null;
+          const loginButtonSelectors = [
+            '//span[text()="Log in"]',
+            '//div[@data-testid="LoginForm_Login_Button"]',
+            '//button[@data-testid="LoginForm_Login_Button"]',
+            '//span[contains(text(), "Log in")]',
+            '//button[contains(text(), "Log in")]'
+          ];
+          
+          for (const selector of loginButtonSelectors) {
+            try {
+              loginButton = await this.driver.findElement(By.xpath(selector));
+              if (loginButton && await loginButton.isDisplayed()) {
+                console.log(`✅ Found login button with selector: ${selector}`);
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+          
+          if (!loginButton) {
+            throw new Error('Could not find login button after username verification');
+          }
+          
           await loginButton.click();
-        } catch (passwordError) {
-          console.error('❌ Could not find password field:', passwordError.message);
+        } catch (usernameNextError) {
+          console.error('❌ Failed to proceed after username verification:', usernameNextError.message);
+          throw new Error('Failed to complete username verification step');
+        }
+        
+      } else if (inputToUse.type === 'password') {
+        console.log('🔒 Password field found directly, proceeding with password...');
+        
+        await inputToUse.element.clear();
+        await inputToUse.element.sendKeys(process.env.X_PASSWORD);
+        
+        // Click Log in button
+        try {
+          // Try multiple selectors for the login button
+          let loginButton = null;
+          const loginButtonSelectors = [
+            '//span[text()="Log in"]',
+            '//div[@data-testid="LoginForm_Login_Button"]',
+            '//button[@data-testid="LoginForm_Login_Button"]',
+            '//span[contains(text(), "Log in")]',
+            '//button[contains(text(), "Log in")]'
+          ];
           
-          // Try to capture what's on the page for debugging
-          const currentUrl = await this.driver.getCurrentUrl();
-          const pageTitle = await this.driver.getTitle();
-          console.log(`🔍 Debug info - URL: ${currentUrl}, Title: ${pageTitle}`);
+          for (const selector of loginButtonSelectors) {
+            try {
+              loginButton = await this.driver.findElement(By.xpath(selector));
+              if (loginButton && await loginButton.isDisplayed()) {
+                console.log(`✅ Found login button with selector: ${selector}`);
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
           
-          throw new Error('Login flow failed: Could not proceed after username');
+          if (!loginButton) {
+            throw new Error('Could not find login button');
+          }
+          
+          await loginButton.click();
+        } catch (loginClickError) {
+          console.error('❌ Failed to click login button:', loginClickError.message);
+          throw new Error('Failed to complete password entry step');
         }
       }
       
