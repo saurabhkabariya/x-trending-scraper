@@ -1,0 +1,25 @@
+# Backend specific ignores
+node_modules/
+.env
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage/
+.nyc_output
+build/
+dist/
+logs/
+*.log
+
+# Selenium WebDriver
+chromedriver*
+geckodriver*
+
+# Database dumps
+*.sql
+*.db
+*.sqlite
+
+# Temporary files
+tmp/
+temp/
