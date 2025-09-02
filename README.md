@@ -2,6 +2,28 @@
 
 A full-stack application that scrapes trending topics from X (Twitter) and displays them in a modern dashboard.
 
+## Live URLs
+
+Frontend Dashboard: https://x-trending-scraper.vercel.app
+
+Backend API: https://x-trending-scraper.onrender.com
+
+###For testing backend APIs on Postman:
+
+1. Runs the Selenium scraper, saves result in DB, returns JSON.
+Post https://x-trending-scraper.onrender.com/api/scrape
+
+2. Fetch the latest 5 runs (default), or specify limit with ?limit=10.
+GET https://x-trending-scraper.onrender.com/api/trends
+GET https://x-trending-scraper.onrender.com/api/trends?limit=10
+
+3. Fetch a specific record by its runId.
+GET https://x-trending-scraper.onrender.com/api/trends/runId
+(replace runId with an actual ID returned by /api/scrape)
+
+4. Shows total records, oldest/latest run info.
+GET https://x-trending-scraper.onrender.com/api/stats
+
 ## Setup
 
 ### Prerequisites

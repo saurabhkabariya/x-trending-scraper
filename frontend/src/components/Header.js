@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Link from 'next/link'
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -23,26 +24,26 @@ export default function Header() {
 
           {/* Navigation */}
           <nav className="hidden md:flex items-center space-x-8">
-            <a
+            <Link
               href="#dashboard"
               className="text-gray-700 hover:text-primary-600 font-medium transition-colors duration-200"
             >
               Dashboard
-            </a>
-            <a
+            </Link>
+            <Link
               href="#history"
               className="text-gray-700 hover:text-primary-600 font-medium transition-colors duration-200"
             >
               History
-            </a>
-            <a
-              href="https://github.com"
+            </Link>
+            <Link
+              href="https://github.com/saurabhkabariya/x-trending-scraper"
               target="_blank"
               rel="noopener noreferrer"
               className="text-gray-700 hover:text-primary-600 font-medium transition-colors duration-200"
             >
               GitHub
-            </a>
+            </Link>
           </nav>
 
           {/* Mobile menu button */}
