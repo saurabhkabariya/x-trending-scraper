@@ -4,7 +4,6 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
-
 class TwitterScraper {
   constructor() {
     this.driver = null;
@@ -12,53 +11,56 @@ class TwitterScraper {
 
     this.ensureChromeUserDataDir();
 
-    // Basic options
+    // Essential options to prevent Chrome crashes
     this.options.addArguments('--no-sandbox');
     this.options.addArguments('--disable-dev-shm-usage');
     this.options.addArguments('--disable-blink-features=AutomationControlled');
-    this.options.addArguments('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    
-    // Performance and stability options
+    this.options.addArguments('--disable-web-security');
+    this.options.addArguments('--disable-features=VizDisplayCompositor');
     this.options.addArguments('--disable-extensions');
     this.options.addArguments('--disable-plugins');
     this.options.addArguments('--disable-images');
+    this.options.addArguments('--disable-gpu');
+    this.options.addArguments('--disable-gpu-sandbox');
+    this.options.addArguments('--disable-software-rasterizer');
     this.options.addArguments('--disable-background-timer-throttling');
     this.options.addArguments('--disable-backgrounding-occluded-windows');
     this.options.addArguments('--disable-renderer-backgrounding');
-    this.options.addArguments('--disable-features=TranslateUI');
-    this.options.addArguments('--disable-default-apps');
-    this.options.addArguments('--disable-web-security');
-    this.options.addArguments('--disable-features=VizDisplayCompositor');
     this.options.addArguments('--disable-ipc-flooding-protection');
-    
-    // Memory and GPU optimizations
-    this.options.addArguments('--memory-pressure-off');
-    this.options.addArguments('--max_old_space_size=4096');
-    this.options.addArguments('--disable-gpu');
-    this.options.addArguments('--disable-gpu-sandbox');
-    
-    // Network and security
     this.options.addArguments('--ignore-ssl-errors=yes');
     this.options.addArguments('--ignore-certificate-errors');
+    this.options.addArguments('--ignore-certificate-errors-spki-list');
+    this.options.addArguments('--ignore-ssl-errors');
+    this.options.addArguments('--allow-running-insecure-content');
+    this.options.addArguments('--disable-default-apps');
+    this.options.addArguments('--no-first-run');
+    this.options.addArguments('--no-default-browser-check');
+    this.options.addArguments('--disable-logging');
+    this.options.addArguments('--disable-logging-redirect');
+    this.options.addArguments('--log-level=3');
+    this.options.addArguments('--output=/dev/null');
+    this.options.addArguments('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    
+    // Remote debugging port to prevent DevToolsActivePort issues
+    this.options.addArguments('--remote-debugging-port=9222');
     
     // User data directory for session persistence
-    try {
-      this.options.addArguments('--user-data-dir=./chrome-user-data');
-      this.options.addArguments('--profile-directory=Default');
-    } catch (e) {
-      console.log('User data directory not available, using default Chrome session');
-    }
+    this.options.addArguments('--user-data-dir=./chrome-user-data');
+    this.options.addArguments('--profile-directory=Default');
+    
+    // Window size for better stability
+    this.options.addArguments('--window-size=1920,1080');
+    this.options.addArguments('--start-maximized');
     
     if (process.env.NODE_ENV === 'production') {
-      this.options.addArguments('--headless');
-      this.options.addArguments('--disable-gpu');
+      this.options.addArguments('--headless=new');
+      this.options.addArguments('--disable-dev-shm-usage');
+      this.options.addArguments('--memory-pressure-off');
+      this.options.addArguments('--max_old_space_size=4096');
     }
-    
-    if (process.env.CHROMEDRIVER_PATH) {
-      const service = new chrome.ServiceBuilder(process.env.CHROMEDRIVER_PATH);
-      this.service = service;
-    }
-  }  ensureChromeUserDataDir() {
+  }
+
+  ensureChromeUserDataDir() {
     try {
       const userDataDir = path.join(process.cwd(), 'chrome-user-data');
       if (!fs.existsSync(userDataDir)) {
@@ -70,22 +72,6 @@ class TwitterScraper {
     }
   }
 
-  isNewsContent(text) {
-    const newsIndicators = [
-      /\d+:\d+|AM|PM/i,
-      /yesterday|today|tomorrow|breaking/i,
-      /\d+\s+(hours?|minutes?|days?)\s+ago/i,
-      /BBC|CNN|Reuters|AP|Associated Press|Fox News|NBC|ABC|CBS/i,
-      /News|Breaking|Report|Update|Alert/i,
-      /^\w+:\s/,
-      /\.\.\.$/, 
-      /\d{1,2}\/\d{1,2}\/\d{2,4}/,
-      /January|February|March|April|May|June|July|August|September|October|November|December/i
-    ];
-    
-    return newsIndicators.some(pattern => pattern.test(text));
-  }
-
   isValidTrend(text) {
     if (!text || typeof text !== 'string') return false;
     
@@ -93,29 +79,12 @@ class TwitterScraper {
     
     if (!cleanText || cleanText.length === 0) return false;
     
+    // Filter out promotional keywords
     const promotionalKeywords = [
-      'subscribe',
-      'premium',
-      'unlock',
-      'features',
-      'revenue',
-      'show more',
-      'see more',
-      'trending',
-      'what\'s happening',
-      'whats happening',
-      'for you',
-      'follow',
-      'suggested',
-      'promoted',
-      'ad',
-      'advertisement',
-      'sponsored',
-      'happening now',
-      'live',
-      'breaking',
-      'update',
-      'updates'
+      'subscribe', 'premium', 'unlock', 'features', 'revenue',
+      'show more', 'see more', 'trending', 'what\'s happening', 'whats happening',
+      'for you', 'follow', 'suggested', 'promoted', 'ad', 'advertisement', 'sponsored',
+      'happening now', 'live', 'breaking', 'update', 'updates'
     ];
     
     const lowerText = cleanText.toLowerCase();
@@ -124,6 +93,7 @@ class TwitterScraper {
       return false;
     }
     
+    // Filter out news patterns (like "4 hours ago · News · 29.6K posts")
     const newsPatterns = [
       /\b(says?|said|reports?|announced?|declares?|confirms?|reveals?|admits?)\b/i,
       /\b(president|minister|government|official|spokesperson)\b/i,
@@ -139,178 +109,154 @@ class TwitterScraper {
       return false;
     }
     
+    // Filter out anything longer than 40 characters (likely news headlines)
     if (cleanText.length > 40) return false;
     
+    // Filter out post count patterns (like "29.6K posts", "94.2K posts")
     const postCountPatterns = [
       /^\d+[\.,]?\d*[KkMm]?\s*(posts?|tweets?|replies?|likes?|retweets?)$/i,
       /^\d+[\.,]?\d*[KkMm]?\s*$/,
       /posts?$/i,
       /tweets?$/i,
       /^[\d\.,KkMm\s]+posts?$/i,
-      /^[\d\.,KkMm\s]+tweets?$/i
+      /^[\d\.,KkMm\s]+tweets?$/i,
+      /^\d+[\.,]\d*[KkMm]\s*posts?$/i
     ];
     
     if (postCountPatterns.some(pattern => pattern.test(cleanText))) {
       return false;
     }
     
-    if (cleanText.length < 2) return false;
-    
-    if (/^\d+$/.test(cleanText)) return false;
-    
-    if (/^\d+[\.,]?\d*[KkMm]$/.test(cleanText)) return false;
-    
-    const uiElements = [
-      '...',
-      'more',
-      'less',
-      'show',
-      'hide',
-      'expand',
-      'collapse',
-      'view',
-      'see',
-      'load',
-      'refresh',
-      'reload',
-      'back',
-      'home',
-      'next',
-      'previous',
-      'show more',
-      'see more',
-      'view more',
-      'load more',
-      'more trends',
-      'show all',
-      'see all'
-    ];
-    
-    
-    if (uiElements.includes(lowerText)) return false;
-    
+    // Filter out time patterns (like "4 hours ago", "3 hours ago")
     const timePatterns = [
+      /^\d+\s*(hours?|minutes?|days?|mins?|hrs?)\s*ago/i,
       /^\d+[hms]$/i,
       /ago$/i,
       /yesterday/i,
       /today/i,
-      /now$/i
+      /now$/i,
+      /\d+:\d+|AM|PM/i
     ];
     
     if (timePatterns.some(pattern => pattern.test(cleanText))) {
       return false;
     }
     
+    // Filter out news category indicators (like "News ·", "Entertainment ·")
+    const newsCategoryPatterns = [
+      /^(news|entertainment|sports|politics|business|technology|health|science)\s*·/i,
+      /·\s*(news|entertainment|sports|politics|business|technology|health|science)/i,
+      /\d+\s*(hours?|minutes?|days?)\s*ago\s*·/i,
+      /·.*posts?$/i,
+      /·.*tweets?$/i
+    ];
+    
+    if (newsCategoryPatterns.some(pattern => pattern.test(cleanText))) {
+      return false;
+    }
+    
+    // Filter out pure numbers
+    if (/^\d+$/.test(cleanText)) return false;
+    
+    // Filter out number + unit patterns (like "94.2K")
+    if (/^\d+[\.,]?\d*[KkMm]$/.test(cleanText)) return false;
+    
+    // Filter out short non-meaningful text
+    if (cleanText.length < 2) return false;
+    
+    // Filter out UI elements
+    const uiElements = [
+      '...', 'more', 'less', 'show', 'hide', 'expand', 'collapse',
+      'view', 'see', 'load', 'refresh', 'reload', 'back', 'home',
+      'next', 'previous', 'show more', 'see more', 'view more',
+      'load more', 'more trends', 'show all', 'see all'
+    ];
+    
+    if (uiElements.includes(lowerText)) return false;
+    
+    // Filter out navigation patterns
     const navigationPatterns = [
-      /^home$/i,
-      /^explore$/i,
-      /^notifications$/i,
-      /^messages$/i,
-      /^bookmarks$/i,
-      /^lists$/i,
-      /^profile$/i,
-      /^settings$/i,
-      /^help$/i,
-      /^about$/i,
-      /^terms$/i,
-      /^privacy$/i,
-      /^categories?$/i,
-      /^topics?$/i
+      /^home$/i, /^explore$/i, /^notifications$/i, /^messages$/i,
+      /^bookmarks$/i, /^lists$/i, /^profile$/i, /^settings$/i,
+      /^help$/i, /^about$/i, /^terms$/i, /^privacy$/i,
+      /^categories?$/i, /^topics?$/i
     ];
     
     if (navigationPatterns.some(pattern => pattern.test(cleanText))) {
       return false;
     }
     
-    
     return true;
-  }
-
-  scoreTrend(text) {
-    let score = 0;
-    
-    if (text.startsWith('#')) {
-      score += 100;
-    }
-    
-    if (text.length <= 15) {
-      score += 50;
-    } else if (text.length <= 25) {
-      score += 30;
-    } else if (text.length <= 35) {
-      score += 10;
-    }
-    
-    if (/^[A-Z][a-z]+([A-Z][a-z]*)*$/.test(text)) {
-      score += 20;
-    }
-    
-    if (/^[A-Z][a-zA-Z0-9]*$/.test(text)) {
-      score += 10; 
-    }
-    
-    const articleWords = ['the', 'and', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'];
-    const lowerText = text.toLowerCase();
-    let articleCount = articleWords.filter(word => lowerText.includes(` ${word} `)).length;
-    score -= articleCount * 20;
-    
-    const headlineWords = ['says', 'said', 'reports', 'announced', 'confirms'];
-    if (headlineWords.some(word => lowerText.includes(word))) {
-      score -= 50;
-    }
-    
-    return score;
   }
 
   async initialize() {
     try {
       console.log('Initializing Chrome WebDriver...');
       
-      let builder = new Builder()
-        .forBrowser('chrome')
-        .setChromeOptions(this.options);
+      // Clean up any existing chrome processes and user data
+      await this.cleanupChromeProcesses();
       
-      if (this.service) {
-        builder.setChromeService(this.service);
-      }
-
+      // First attempt with full options
       try {
-        this.driver = await builder.build();
-        console.log('WebDriver initialized successfully');
+        this.driver = await new Builder()
+          .forBrowser('chrome')
+          .setChromeOptions(this.options)
+          .build();
+        console.log('✅ WebDriver initialized successfully');
+        return;
       } catch (error) {
-        console.log('First attempt failed, trying with fallback options...');
+        console.log('⚠️ First attempt failed, trying with minimal options...', error.message);
         
+        // Fallback with minimal options
         const fallbackOptions = new chrome.Options();
         fallbackOptions.addArguments('--no-sandbox');
         fallbackOptions.addArguments('--disable-dev-shm-usage');
+        fallbackOptions.addArguments('--disable-gpu');
+        fallbackOptions.addArguments('--disable-web-security');
+        fallbackOptions.addArguments('--remote-debugging-port=9223'); // Different port
+        fallbackOptions.addArguments('--window-size=1920,1080');
+        fallbackOptions.addArguments('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         fallbackOptions.addArguments('--disable-blink-features=AutomationControlled');
-        fallbackOptions.addArguments('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
-        fallbackOptions.addArguments('--disable-extensions');
-        fallbackOptions.addArguments('--disable-plugins');
-        fallbackOptions.addArguments('--disable-images');
-        fallbackOptions.addArguments('--disable-default-apps');
-        fallbackOptions.addArguments('--remote-debugging-port=9222');
         
+        // Try without user data directory in fallback
         if (process.env.NODE_ENV === 'production') {
-          fallbackOptions.addArguments('--headless');
-          fallbackOptions.addArguments('--disable-gpu');
+          fallbackOptions.addArguments('--headless=new');
         }
         
-        builder = new Builder()
+        this.driver = await new Builder()
           .forBrowser('chrome')
-          .setChromeOptions(fallbackOptions);
-        
-        if (this.service) {
-          builder.setChromeService(this.service);
-        }
-        
-        this.driver = await builder.build();
-        console.log('WebDriver initialized with fallback options');
+          .setChromeOptions(fallbackOptions)
+          .build();
+        console.log('✅ WebDriver initialized with fallback options');
       }
-      
     } catch (error) {
-      console.error('Failed to initialize WebDriver:', error.message);
+      console.error('❌ Failed to initialize WebDriver:', error.message);
       throw new Error(`WebDriver initialization failed: ${error.message}`);
+    }
+  }
+
+  async cleanupChromeProcesses() {
+    try {
+      // Clean up chrome user data directory if it's causing issues
+      const userDataDir = path.join(process.cwd(), 'chrome-user-data');
+      if (fs.existsSync(userDataDir)) {
+        // Try to remove lock files that might cause issues
+        const lockFiles = ['SingletonLock', 'lockfile'];
+        for (const lockFile of lockFiles) {
+          const lockPath = path.join(userDataDir, lockFile);
+          if (fs.existsSync(lockPath)) {
+            try {
+              fs.unlinkSync(lockPath);
+              console.log(`Removed lock file: ${lockFile}`);
+            } catch (e) {
+              // Ignore if we can't remove it
+            }
+          }
+        }
+      }
+    } catch (error) {
+      // Ignore cleanup errors
+      console.log('Chrome cleanup completed');
     }
   }
 
@@ -318,45 +264,21 @@ class TwitterScraper {
     try {
       console.log('Checking if user is already logged in...');
       await this.driver.get('https://twitter.com/home');
-      await this.driver.sleep(5000); // Wait longer for page load
+      await this.driver.sleep(3000);
       
       const currentUrl = await this.driver.getCurrentUrl();
-      console.log('Current URL after navigation:', currentUrl);
+      console.log('Current URL:', currentUrl);
       
-      if (currentUrl.includes('/home') && !currentUrl.includes('/login') && !currentUrl.includes('/i/flow/login')) {
-        // Try multiple methods to verify login
-        try {
-          await this.driver.findElement(By.css('[aria-label*="Tweet"]'));
-          console.log('✅ User already logged in (found Tweet button)');
-          return true;
-        } catch {
-          try {
-            await this.driver.findElement(By.css('[data-testid="SideNav_AccountSwitcher_Button"]'));
-            console.log('✅ User already logged in (found account switcher)');
-            return true;
-          } catch {
-            try {
-              await this.driver.findElement(By.css('[data-testid="SideNav_NewTweet_Button"]'));
-              console.log('✅ User already logged in (found new tweet button)');
-              return true;
-            } catch {
-              try {
-                await this.driver.findElement(By.css('[data-testid="primaryColumn"]'));
-                console.log('✅ User already logged in (found primary column)');
-                return true;
-              } catch {
-                console.log('❌ Login verification failed - no indicators found');
-                return false;
-              }
-            }
-          }
-        }
+      // If URL contains home and not login, user is logged in
+      if (currentUrl.includes('/home') && !currentUrl.includes('/login')) {
+        console.log('✅ User already logged in');
+        return true;
       }
       
-      console.log('❌ User not logged in - redirected to login page');
+      console.log('❌ User not logged in');
       return false;
     } catch (error) {
-      console.log('⚠️ Could not verify login status, proceeding with login. Error:', error.message);
+      console.log('Could not verify login status, proceeding with login');
       return false;
     }
   }
@@ -368,728 +290,118 @@ class TwitterScraper {
         return;
       }
       
-      console.log('🔑 User not logged in, attempting login...');
+      console.log('🔑 Starting login process...');
       
       // Navigate to login page
       await this.driver.get('https://twitter.com/i/flow/login');
       await this.driver.sleep(3000);
       
-      // Enter username
+      // Step 1: Enter username
       console.log('📝 Entering username...');
       const usernameField = await this.driver.wait(
         until.elementLocated(By.css('input[autocomplete="username"]')),
-        15000
+        10000
       );
       await usernameField.clear();
       await usernameField.sendKeys(process.env.X_USERNAME);
       
       const nextButton = await this.driver.findElement(By.xpath('//span[text()="Next"]'));
       await nextButton.click();
+      await this.driver.sleep(3000);
       
-      // Wait for next step and determine what X is asking for
-      await this.driver.sleep(5000);
+      // Step 2: Check what is required next (password or email)
+      console.log('🔍 Checking what input is required...');
       
-      // First, let's check what's actually on the page
-      console.log('🔍 Analyzing login flow step...');
+      let passwordField = null;
+      let emailField = null;
       
-      // Check for multiple possible next steps with timeout
-      const possibleInputs = [];
-      const maxWaitTime = 10000; // 10 seconds max wait
-      const startTime = Date.now();
-      
-      // Check for password field first (most common case)
+      // Check for password field
       try {
-        await this.driver.wait(async () => {
-          try {
-            const passwordField = await this.driver.findElement(By.css('input[type="password"]'));
-            if (passwordField && await passwordField.isDisplayed()) {
-              possibleInputs.push({ type: 'password', element: passwordField });
-              console.log('✅ Found password field');
-              return true;
-            }
-          } catch (e) {
-            // Continue checking
-          }
-          
-          // Check if we've waited too long
-          return Date.now() - startTime > maxWaitTime;
-        }, 2000);
-      } catch (e) {
-        console.log('ℹ️ Password field not found or not visible');
-      }
-      
-      // Check for email verification field
-      try {
-        const emailSelectors = [
-          'input[data-testid="ocfEnterTextTextInput"]',
-          'input[name="text"]',
-          'input[autocomplete="email"]',
-          'input[type="email"]',
-          'input[placeholder*="email"]',
-          'input[placeholder*="Email"]'
-        ];
-        
-        let emailField = null;
-        for (const selector of emailSelectors) {
-          try {
-            const field = await this.driver.findElement(By.css(selector));
-            if (field && await field.isDisplayed()) {
-              emailField = field;
-              console.log(`✅ Found email field with selector: ${selector}`);
-              break;
-            }
-          } catch (e) {
-            continue;
-          }
-        }
-        
-        if (emailField) {
-          possibleInputs.push({ type: 'email', element: emailField });
+        passwordField = await this.driver.findElement(By.css('input[type="password"]'));
+        if (await passwordField.isDisplayed()) {
+          console.log('🔒 Password field found');
+        } else {
+          passwordField = null;
         }
       } catch (e) {
-        console.log('ℹ️ Email field not found or not visible');
+        // Password field not found
       }
       
-      // Check for username verification field (in case of unusual verification)
-      try {
-        const usernameVerificationField = await this.driver.findElement(By.css('input[data-testid="ocfEnterTextTextInput"]'));
-        if (usernameVerificationField && await usernameVerificationField.isDisplayed()) {
-          // Check if it's asking for username instead of email
-          const pageText = await this.driver.getPageSource();
-          if (pageText.toLowerCase().includes('username') && !pageText.toLowerCase().includes('email')) {
-            possibleInputs.push({ type: 'username_verification', element: usernameVerificationField });
-            console.log('✅ Found username verification field');
-          }
-        }
-      } catch (e) {
-        console.log('ℹ️ Username verification field not found');
-      }
-      
-      // Process based on what we found
-      if (possibleInputs.length === 0) {
-        console.log('⚠️ No recognized input fields found, attempting fallback approach...');
-        
-        // Fallback: Try to find any visible input and determine its purpose
+      // Check for email field if password not found
+      if (!passwordField) {
         try {
-          const allInputs = await this.driver.findElements(By.css('input[type="text"], input[type="email"], input[type="password"], input[name="text"]'));
-          let fallbackInput = null;
-          
-          for (const input of allInputs) {
-            try {
-              if (await input.isDisplayed()) {
-                fallbackInput = input;
-                break;
-              }
-            } catch (e) {
-              continue;
-            }
+          emailField = await this.driver.findElement(By.css('input[data-testid="ocfEnterTextTextInput"]'));
+          if (await emailField.isDisplayed()) {
+            console.log('📧 Email field found');
+          } else {
+            emailField = null;
           }
-          
-          if (fallbackInput) {
-            const inputType = await fallbackInput.getAttribute('type');
-            const inputName = await fallbackInput.getAttribute('name');
-            const inputPlaceholder = await fallbackInput.getAttribute('placeholder');
-            
-            console.log(`🔍 Found fallback input - type: ${inputType}, name: ${inputName}, placeholder: ${inputPlaceholder}`);
-            
-            if (inputType === 'password') {
-              possibleInputs.push({ type: 'password', element: fallbackInput });
-            } else {
-              // Assume it's asking for email or username verification
-              possibleInputs.push({ type: 'email', element: fallbackInput });
-            }
-          }
-        } catch (fallbackError) {
-          console.error('❌ Fallback input detection failed:', fallbackError.message);
-        }
-        
-        if (possibleInputs.length === 0) {
-          const currentUrl = await this.driver.getCurrentUrl();
-          const pageTitle = await this.driver.getTitle();
-          const pageSource = await this.driver.getPageSource();
-          
-          console.log(`🔍 Debug info - URL: ${currentUrl}, Title: ${pageTitle}`);
-          console.log('🔍 Page contains login?', pageSource.includes('login') || pageSource.includes('Log in'));
-          console.log('🔍 Page contains password?', pageSource.includes('password') || pageSource.includes('Password'));
-          
-          throw new Error('Login flow failed: No recognizable input fields found after username');
+        } catch (e) {
+          // Email field not found
         }
       }
       
-      // Handle the appropriate input type
-      const inputToUse = possibleInputs[0]; // Use the first valid input found
-      
-      if (inputToUse.type === 'email') {
-        console.log('📧 Email verification requested, providing email...');
+      // Step 3: Fill the required field
+      if (passwordField) {
+        console.log('🔒 Entering password...');
+        await passwordField.clear();
+        await passwordField.sendKeys(process.env.X_PASSWORD);
         
-        if (!process.env.X_EMAIL) {
-          throw new Error('X_EMAIL environment variable is required for email verification');
-        }
+        const loginButton = await this.driver.findElement(By.xpath('//span[text()="Log in"]'));
+        await loginButton.click();
+        await this.driver.sleep(3000);
         
-        await inputToUse.element.clear();
-        await inputToUse.element.sendKeys(process.env.X_EMAIL);
+      } else if (emailField) {
+        console.log('📧 Entering email...');
+        await emailField.clear();
+        await emailField.sendKeys(process.env.X_EMAIL);
         
-        // Click Next after email
-        try {
-          let nextEmailButton = null;
-          const nextButtonSelectors = [
-            '//span[text()="Next"]',
-            '//button[@data-testid="ocfEnterTextNextButton"]',
-            '//div[@data-testid="ocfEnterTextNextButton"]',
-            '//span[contains(text(), "Next")]',
-            '//button[contains(text(), "Next")]'
-          ];
-          
-          for (const selector of nextButtonSelectors) {
-            try {
-              nextEmailButton = await this.driver.findElement(By.xpath(selector));
-              if (nextEmailButton && await nextEmailButton.isDisplayed()) {
-                console.log(`✅ Found Next button with selector: ${selector}`);
-                break;
-              }
-            } catch (e) {
-              continue;
-            }
-          }
-          
-          if (!nextEmailButton) {
-            throw new Error('Could not find Next button after email entry');
-          }
-          
-          await nextEmailButton.click();
-          await this.driver.sleep(5000);
-          
-          // Now look for password field after email verification
-          console.log('🔒 Looking for password field after email verification...');
-          const passwordFieldAfterEmail = await this.driver.wait(
-            until.elementLocated(By.css('input[type="password"]')),
-            15000
-          );
-          await passwordFieldAfterEmail.clear();
-          await passwordFieldAfterEmail.sendKeys(process.env.X_PASSWORD);
-          
-          // Click Log in button
-          let loginButtonAfterEmail = null;
-          const loginButtonSelectors = [
-            '//span[text()="Log in"]',
-            '//div[@data-testid="LoginForm_Login_Button"]',
-            '//button[@data-testid="LoginForm_Login_Button"]',
-            '//span[contains(text(), "Log in")]',
-            '//button[contains(text(), "Log in")]'
-          ];
-          
-          for (const selector of loginButtonSelectors) {
-            try {
-              loginButtonAfterEmail = await this.driver.findElement(By.xpath(selector));
-              if (loginButtonAfterEmail && await loginButtonAfterEmail.isDisplayed()) {
-                console.log(`✅ Found login button with selector: ${selector}`);
-                break;
-              }
-            } catch (e) {
-              continue;
-            }
-          }
-          
-          if (!loginButtonAfterEmail) {
-            throw new Error('Could not find login button after email verification');
-          }
-          
-          await loginButtonAfterEmail.click();
-          
-          // Wait a moment for potential post-password security checks
-          await this.driver.sleep(3000);
-          
-          // Check if Twitter is asking for additional email verification after password (even after initial email verification)
-          console.log('🔍 Checking for secondary post-password email verification...');
-          try {
-            const secondaryEmailSelectors = [
-              'input[data-testid="ocfEnterTextTextInput"]',
-              'input[name="text"]',
-              'input[autocomplete="email"]',
-              'input[type="email"]',
-              'input[placeholder*="email"]',
-              'input[placeholder*="Email"]'
-            ];
-            
-            let secondaryEmailField = null;
-            for (const selector of secondaryEmailSelectors) {
-              try {
-                const field = await this.driver.findElement(By.css(selector));
-                if (field && await field.isDisplayed()) {
-                  secondaryEmailField = field;
-                  console.log(`✅ Found secondary email field with selector: ${selector}`);
-                  break;
-                }
-              } catch (e) {
-                continue;
-              }
-            }
-            
-            if (secondaryEmailField) {
-              console.log('📧 Secondary email verification requested, providing email again...');
-              
-              await secondaryEmailField.clear();
-              await secondaryEmailField.sendKeys(process.env.X_EMAIL);
-              
-              // Click Next/Continue after secondary email
-              let secondaryNextButton = null;
-              const nextButtonSelectors = [
-                '//span[text()="Next"]',
-                '//span[text()="Continue"]',
-                '//span[text()="Verify"]',
-                '//button[@data-testid="ocfEnterTextNextButton"]',
-                '//div[@data-testid="ocfEnterTextNextButton"]',
-                '//span[contains(text(), "Next")]',
-                '//span[contains(text(), "Continue")]',
-                '//button[contains(text(), "Next")]',
-                '//button[contains(text(), "Continue")]'
-              ];
-              
-              for (const selector of nextButtonSelectors) {
-                try {
-                  secondaryNextButton = await this.driver.findElement(By.xpath(selector));
-                  if (secondaryNextButton && await secondaryNextButton.isDisplayed()) {
-                    console.log(`✅ Found secondary Next/Continue button with selector: ${selector}`);
-                    break;
-                  }
-                } catch (e) {
-                  continue;
-                }
-              }
-              
-              if (secondaryNextButton) {
-                await secondaryNextButton.click();
-                console.log('✅ Successfully handled secondary email verification');
-                await this.driver.sleep(3000);
-              } else {
-                console.log('⚠️ Could not find Next/Continue button after secondary email entry');
-              }
-            } else {
-              console.log('ℹ️ No secondary email verification required');
-            }
-          } catch (secondaryEmailError) {
-            console.log('ℹ️ Secondary email verification check failed, continuing...', secondaryEmailError.message);
-          }
-        } catch (emailNextError) {
-          console.error('❌ Failed to proceed after email verification:', emailNextError.message);
-          throw new Error('Failed to complete email verification step');
-        }
+        const nextEmailButton = await this.driver.findElement(By.xpath('//span[text()="Next"]'));
+        await nextEmailButton.click();
+        await this.driver.sleep(3000);
         
-      } else if (inputToUse.type === 'username_verification') {
-        console.log('👤 Username verification requested, providing username...');
+        // Now enter password
+        console.log('🔒 Entering password after email verification...');
+        const passwordFieldAfterEmail = await this.driver.wait(
+          until.elementLocated(By.css('input[type="password"]')),
+          10000
+        );
+        await passwordFieldAfterEmail.clear();
+        await passwordFieldAfterEmail.sendKeys(process.env.X_PASSWORD);
         
-        await inputToUse.element.clear();
-        await inputToUse.element.sendKeys(process.env.X_USERNAME);
-        
-        // Click Next after username verification
-        try {
-          let nextButton = null;
-          const nextButtonSelectors = [
-            '//span[text()="Next"]',
-            '//button[@data-testid="ocfEnterTextNextButton"]',
-            '//div[@data-testid="ocfEnterTextNextButton"]',
-            '//span[contains(text(), "Next")]',
-            '//button[contains(text(), "Next")]'
-          ];
-          
-          for (const selector of nextButtonSelectors) {
-            try {
-              nextButton = await this.driver.findElement(By.xpath(selector));
-              if (nextButton && await nextButton.isDisplayed()) {
-                console.log(`✅ Found Next button with selector: ${selector}`);
-                break;
-              }
-            } catch (e) {
-              continue;
-            }
-          }
-          
-          if (!nextButton) {
-            throw new Error('Could not find Next button after username verification');
-          }
-          
-          await nextButton.click();
-          await this.driver.sleep(5000);
-          
-          // Now look for password field
-          console.log('🔒 Looking for password field after username verification...');
-          const passwordField = await this.driver.wait(
-            until.elementLocated(By.css('input[type="password"]')),
-            15000
-          );
-          await passwordField.clear();
-          await passwordField.sendKeys(process.env.X_PASSWORD);
-          
-          // Click Log in button
-          let loginButton = null;
-          const loginButtonSelectors = [
-            '//span[text()="Log in"]',
-            '//div[@data-testid="LoginForm_Login_Button"]',
-            '//button[@data-testid="LoginForm_Login_Button"]',
-            '//span[contains(text(), "Log in")]',
-            '//button[contains(text(), "Log in")]'
-          ];
-          
-          for (const selector of loginButtonSelectors) {
-            try {
-              loginButton = await this.driver.findElement(By.xpath(selector));
-              if (loginButton && await loginButton.isDisplayed()) {
-                console.log(`✅ Found login button with selector: ${selector}`);
-                break;
-              }
-            } catch (e) {
-              continue;
-            }
-          }
-          
-          if (!loginButton) {
-            throw new Error('Could not find login button after username verification');
-          }
-          
-          await loginButton.click();
-          
-          // Wait a moment for potential post-password security checks
-          await this.driver.sleep(3000);
-          
-          // Check if Twitter is asking for additional email verification after password
-          console.log('🔍 Checking for post-username-verification email verification...');
-          try {
-            const postUsernameEmailSelectors = [
-              'input[data-testid="ocfEnterTextTextInput"]',
-              'input[name="text"]',
-              'input[autocomplete="email"]',
-              'input[type="email"]',
-              'input[placeholder*="email"]',
-              'input[placeholder*="Email"]'
-            ];
-            
-            let postUsernameEmailField = null;
-            for (const selector of postUsernameEmailSelectors) {
-              try {
-                const field = await this.driver.findElement(By.css(selector));
-                if (field && await field.isDisplayed()) {
-                  postUsernameEmailField = field;
-                  console.log(`✅ Found post-username email field with selector: ${selector}`);
-                  break;
-                }
-              } catch (e) {
-                continue;
-              }
-            }
-            
-            if (postUsernameEmailField) {
-              console.log('📧 Email verification requested after username flow, providing email...');
-              
-              if (!process.env.X_EMAIL) {
-                throw new Error('X_EMAIL environment variable is required for post-username email verification');
-              }
-              
-              await postUsernameEmailField.clear();
-              await postUsernameEmailField.sendKeys(process.env.X_EMAIL);
-              
-              // Click Next/Continue after email
-              let nextButton = null;
-              const nextButtonSelectors = [
-                '//span[text()="Next"]',
-                '//span[text()="Continue"]',
-                '//span[text()="Verify"]',
-                '//button[@data-testid="ocfEnterTextNextButton"]',
-                '//div[@data-testid="ocfEnterTextNextButton"]',
-                '//span[contains(text(), "Next")]',
-                '//span[contains(text(), "Continue")]',
-                '//button[contains(text(), "Next")]',
-                '//button[contains(text(), "Continue")]'
-              ];
-              
-              for (const selector of nextButtonSelectors) {
-                try {
-                  nextButton = await this.driver.findElement(By.xpath(selector));
-                  if (nextButton && await nextButton.isDisplayed()) {
-                    console.log(`✅ Found Next/Continue button with selector: ${selector}`);
-                    break;
-                  }
-                } catch (e) {
-                  continue;
-                }
-              }
-              
-              if (nextButton) {
-                await nextButton.click();
-                console.log('✅ Successfully handled post-username email verification');
-                await this.driver.sleep(3000);
-              } else {
-                console.log('⚠️ Could not find Next/Continue button after email entry');
-              }
-            } else {
-              console.log('ℹ️ No post-username email verification required');
-            }
-          } catch (postUsernameEmailError) {
-            console.log('ℹ️ Post-username email verification check failed, continuing...', postUsernameEmailError.message);
-          }
-        } catch (usernameNextError) {
-          console.error('❌ Failed to proceed after username verification:', usernameNextError.message);
-          throw new Error('Failed to complete username verification step');
-        }
-        
-      } else if (inputToUse.type === 'password') {
-        console.log('🔒 Password field found directly, proceeding with password...');
-        
-        await inputToUse.element.clear();
-        await inputToUse.element.sendKeys(process.env.X_PASSWORD);
-        
-        // Click Log in button
-        try {
-          // Try multiple selectors for the login button
-          let loginButton = null;
-          const loginButtonSelectors = [
-            '//span[text()="Log in"]',
-            '//div[@data-testid="LoginForm_Login_Button"]',
-            '//button[@data-testid="LoginForm_Login_Button"]',
-            '//span[contains(text(), "Log in")]',
-            '//button[contains(text(), "Log in")]'
-          ];
-          
-          for (const selector of loginButtonSelectors) {
-            try {
-              loginButton = await this.driver.findElement(By.xpath(selector));
-              if (loginButton && await loginButton.isDisplayed()) {
-                console.log(`✅ Found login button with selector: ${selector}`);
-                break;
-              }
-            } catch (e) {
-              continue;
-            }
-          }
-          
-          if (!loginButton) {
-            throw new Error('Could not find login button');
-          }
-          
-          await loginButton.click();
-          
-          // Wait a moment for potential post-password security checks
-          await this.driver.sleep(3000);
-          
-          // Check if Twitter is asking for additional email verification after password
-          console.log('🔍 Checking for post-password email verification...');
-          try {
-            const postPasswordEmailSelectors = [
-              'input[data-testid="ocfEnterTextTextInput"]',
-              'input[name="text"]',
-              'input[autocomplete="email"]',
-              'input[type="email"]',
-              'input[placeholder*="email"]',
-              'input[placeholder*="Email"]'
-            ];
-            
-            let postPasswordEmailField = null;
-            for (const selector of postPasswordEmailSelectors) {
-              try {
-                const field = await this.driver.findElement(By.css(selector));
-                if (field && await field.isDisplayed()) {
-                  postPasswordEmailField = field;
-                  console.log(`✅ Found post-password email field with selector: ${selector}`);
-                  break;
-                }
-              } catch (e) {
-                continue;
-              }
-            }
-            
-            if (postPasswordEmailField) {
-              console.log('📧 Additional email verification requested after password, providing email...');
-              
-              if (!process.env.X_EMAIL) {
-                throw new Error('X_EMAIL environment variable is required for post-password email verification');
-              }
-              
-              await postPasswordEmailField.clear();
-              await postPasswordEmailField.sendKeys(process.env.X_EMAIL);
-              
-              // Click Next/Continue after email
-              let nextButton = null;
-              const nextButtonSelectors = [
-                '//span[text()="Next"]',
-                '//span[text()="Continue"]',
-                '//span[text()="Verify"]',
-                '//button[@data-testid="ocfEnterTextNextButton"]',
-                '//div[@data-testid="ocfEnterTextNextButton"]',
-                '//span[contains(text(), "Next")]',
-                '//span[contains(text(), "Continue")]',
-                '//button[contains(text(), "Next")]',
-                '//button[contains(text(), "Continue")]'
-              ];
-              
-              for (const selector of nextButtonSelectors) {
-                try {
-                  nextButton = await this.driver.findElement(By.xpath(selector));
-                  if (nextButton && await nextButton.isDisplayed()) {
-                    console.log(`✅ Found Next/Continue button with selector: ${selector}`);
-                    break;
-                  }
-                } catch (e) {
-                  continue;
-                }
-              }
-              
-              if (nextButton) {
-                await nextButton.click();
-                console.log('✅ Successfully handled post-password email verification');
-                await this.driver.sleep(3000);
-              } else {
-                console.log('⚠️ Could not find Next/Continue button after email entry, attempting to proceed...');
-              }
-            } else {
-              console.log('ℹ️ No post-password email verification required');
-            }
-          } catch (postPasswordError) {
-            console.log('ℹ️ Post-password email verification check failed, continuing...', postPasswordError.message);
-          }
-        } catch (loginClickError) {
-          console.error('❌ Failed to click login button:', loginClickError.message);
-          throw new Error('Failed to complete password entry step');
-        }
+        const loginButton = await this.driver.findElement(By.xpath('//span[text()="Log in"]'));
+        await loginButton.click();
+        await this.driver.sleep(3000);
+      } else {
+        throw new Error('Could not find password or email field');
       }
       
-      // Final comprehensive security check before waiting for home page
-      console.log('🔍 Performing final security verification check...');
+      // Step 4: Check if anything else is required
+      console.log('🔍 Checking for additional verification...');
       await this.driver.sleep(2000);
       
       try {
-        // Check for any remaining verification steps
-        const finalVerificationSelectors = [
-          'input[data-testid="ocfEnterTextTextInput"]',
-          'input[name="text"]',
-          'input[autocomplete="email"]',
-          'input[type="email"]',
-          'input[placeholder*="email"]',
-          'input[placeholder*="Email"]',
-          'input[placeholder*="verification"]',
-          'input[placeholder*="code"]'
-        ];
-        
-        let finalVerificationField = null;
-        for (const selector of finalVerificationSelectors) {
-          try {
-            const field = await this.driver.findElement(By.css(selector));
-            if (field && await field.isDisplayed()) {
-              finalVerificationField = field;
-              console.log(`✅ Found final verification field with selector: ${selector}`);
-              break;
-            }
-          } catch (e) {
-            continue;
-          }
-        }
-        
-        if (finalVerificationField) {
-          // Check what type of verification is being requested
-          const pageText = await this.driver.getPageSource();
-          const isEmailVerification = pageText.toLowerCase().includes('email') && !pageText.toLowerCase().includes('code');
-          const isCodeVerification = pageText.toLowerCase().includes('code') || pageText.toLowerCase().includes('verification');
+        const additionalField = await this.driver.findElement(By.css('input[data-testid="ocfEnterTextTextInput"]'));
+        if (await additionalField.isDisplayed()) {
+          console.log('📧 Additional email verification required...');
+          await additionalField.clear();
+          await additionalField.sendKeys(process.env.X_EMAIL);
           
-          if (isEmailVerification && !isCodeVerification) {
-            console.log('📧 Final email verification requested, providing email...');
-            
-            if (!process.env.X_EMAIL) {
-              console.log('⚠️ X_EMAIL not available for final verification, attempting to skip...');
-            } else {
-              await finalVerificationField.clear();
-              await finalVerificationField.sendKeys(process.env.X_EMAIL);
-              
-              // Click Next/Continue
-              const finalNextSelectors = [
-                '//span[text()="Next"]',
-                '//span[text()="Continue"]',
-                '//span[text()="Verify"]',
-                '//span[text()="Skip"]',
-                '//button[@data-testid="ocfEnterTextNextButton"]',
-                '//div[@data-testid="ocfEnterTextNextButton"]',
-                '//span[contains(text(), "Next")]',
-                '//span[contains(text(), "Continue")]',
-                '//span[contains(text(), "Skip")]'
-              ];
-              
-              let finalNextButton = null;
-              for (const selector of finalNextSelectors) {
-                try {
-                  finalNextButton = await this.driver.findElement(By.xpath(selector));
-                  if (finalNextButton && await finalNextButton.isDisplayed()) {
-                    console.log(`✅ Found final Next/Continue button with selector: ${selector}`);
-                    break;
-                  }
-                } catch (e) {
-                  continue;
-                }
-              }
-              
-              if (finalNextButton) {
-                await finalNextButton.click();
-                console.log('✅ Successfully handled final email verification');
-                await this.driver.sleep(3000);
-              }
-            }
-          } else if (isCodeVerification) {
-            console.log('📱 2FA or verification code requested');
-            console.log('⚠️ 2FA/Verification code handling not implemented - manual intervention may be required');
-            console.log('ℹ️ Please disable 2FA on your X account or handle verification manually');
-            
-            // Look for skip option
-            try {
-              const skipButton = await this.driver.findElement(By.xpath('//span[text()="Skip"]'));
-              if (skipButton && await skipButton.isDisplayed()) {
-                console.log('🚫 Found Skip button, attempting to skip verification...');
-                await skipButton.click();
-                await this.driver.sleep(3000);
-              }
-            } catch (skipError) {
-              console.log('ℹ️ No skip option found for verification');
-            }
-          }
-        } else {
-          console.log('ℹ️ No additional verification steps found');
+          const continueButton = await this.driver.findElement(By.xpath('//span[text()="Next"]'));
+          await continueButton.click();
+          await this.driver.sleep(3000);
         }
-      } catch (finalVerificationError) {
-        console.log('ℹ️ Final verification check failed, continuing...', finalVerificationError.message);
+      } catch (e) {
+        console.log('ℹ️ No additional verification required');
       }
       
-      // Wait for home page to load with extended timeout
+      // Step 5: Wait for login completion
       console.log('⏳ Waiting for login to complete...');
-      try {
-        await this.driver.wait(
-          until.urlContains('home'),
-          30000  // Increased timeout to 30 seconds
-        );
-        console.log('✅ Successfully logged in to X');
-      } catch (timeoutError) {
-        // Check if we're actually logged in by looking for other indicators
-        const currentUrl = await this.driver.getCurrentUrl();
-        console.log('⚠️ Login timeout, checking current URL:', currentUrl);
-        
-        // Check for alternative login success indicators
-        if (currentUrl.includes('home') || currentUrl.includes('explore') || (currentUrl.includes('twitter.com') && !currentUrl.includes('login'))) {
-          console.log('✅ Login appears successful despite timeout');
-        } else {
-          // Try to detect specific error conditions
-          try {
-            const errorElements = await this.driver.findElements(By.css('[data-testid="error"], .error, [role="alert"]'));
-            if (errorElements.length > 0) {
-              const errorText = await errorElements[0].getText();
-              throw new Error(`Login failed with error: ${errorText}`);
-            }
-          } catch {
-            // No error elements found
-          }
-          
-          // Check if we're stuck on a verification page
-          const pageTitle = await this.driver.getTitle();
-          if (pageTitle.includes('verification') || pageTitle.includes('Verification')) {
-            throw new Error('Login failed: Account requires additional verification. Please login manually first.');
-          }
-          
-          throw new Error(`Login failed: Still on login page after timeout. Current URL: ${currentUrl}`);
-        }
-      }
+      await this.driver.wait(
+        until.urlContains('home'),
+        15000
+      );
+      console.log('✅ Successfully logged in to X');
       
     } catch (error) {
       console.error('❌ Login failed:', error.message);
@@ -1099,241 +411,171 @@ class TwitterScraper {
 
   async scrapeTrendingTopics() {
     try {
+      console.log('📊 Starting to scrape trending topics...');
       
-      await this.driver.get('https://twitter.com/explore');
-      await this.driver.sleep(5000);
+      // Go to home page where trending section is available
+      await this.driver.get('https://twitter.com/home');
+      await this.driver.sleep(5000); // Wait longer for page load
       
-      let trendingTopics = await this.extractTrendsFromPage();
+      let trendingTopics = [];
       
-      if (trendingTopics.length < 3) {
-        
-        await this.driver.get('https://twitter.com/home');
-        await this.driver.sleep(5000);
-        
-        const homeTrends = await this.extractTrendsFromPage();
-        trendingTopics = [...trendingTopics, ...homeTrends];
-      }
-      
-      trendingTopics = [...new Set(trendingTopics)];
-      
-      if (trendingTopics.length < 3) {
-        
-        await this.driver.get('https://twitter.com/explore/tabs/trending');
-        await this.driver.sleep(5000);
-        
-        const trendingPageTrends = await this.extractTrendsFromPage();
-        trendingTopics = [...trendingTopics, ...trendingPageTrends];
-        trendingTopics = [...new Set(trendingTopics)];
-      }
-      
-      if (trendingTopics.length < 5) {
-        
-        const linkTrends = await this.extractTrendsFromLinks();
-        trendingTopics = [...trendingTopics, ...linkTrends];
-        trendingTopics = [...new Set(trendingTopics)];
-      }
-      
-      if (trendingTopics.length < 5) {
-        
-        const mockTrends = [
-          '#TechNews',
-          '#AI',
-          '#JavaScript',
-          '#WebDevelopment',
-          '#OpenSource',
-          '#Programming',
-          '#Technology',
-          '#Innovation'
+      // Method 1: Try to find and click "Show more" button
+      console.log('🔍 Looking for "Show more" button...');
+      try {
+        const showMoreSelectors = [
+          "//span[contains(text(), 'Show more')]",
+          "//a[contains(text(), 'Show more')]",
+          "//div[contains(text(), 'Show more')]",
+          "//span[contains(text(), 'See more')]",
+          "//a[contains(@href, '/explore')]"
         ];
-        for (const mockTrend of mockTrends) {
-          if (!trendingTopics.includes(mockTrend) && trendingTopics.length < 5) {
-            trendingTopics.push(mockTrend);
+        
+        let showMoreClicked = false;
+        for (const selector of showMoreSelectors) {
+          try {
+            const showMoreButton = await this.driver.findElement(By.xpath(selector));
+            if (await showMoreButton.isDisplayed()) {
+              console.log('✅ Found "Show more" button, clicking...');
+              await this.driver.executeScript("arguments[0].click();", showMoreButton);
+              await this.driver.sleep(3000);
+              showMoreClicked = true;
+              break;
+            }
+          } catch (e) {
+            continue;
           }
         }
+        
+        if (!showMoreClicked) {
+          console.log('ℹ️ No "Show more" button found, trying direct navigation...');
+          // Try to navigate directly to explore page
+          await this.driver.get('https://twitter.com/explore/tabs/trending');
+          await this.driver.sleep(3000);
+        }
+      } catch (e) {
+        console.log('⚠️ Error with show more button, trying alternative approach...');
       }
       
-      const finalTrends = trendingTopics.slice(0, 5);
+      // Method 2: Extract trends from current page
+      console.log('🎯 Extracting trends from current page...');
+      trendingTopics = await this.extractTrendsFromCurrentPage();
       
+      // Method 3: If not enough trends, try explore page
+      if (trendingTopics.length < 3) {
+        console.log('🔄 Not enough trends found, trying explore page...');
+        await this.driver.get('https://twitter.com/explore');
+        await this.driver.sleep(3000);
+        const exploreTrends = await this.extractTrendsFromCurrentPage();
+        trendingTopics = [...trendingTopics, ...exploreTrends];
+        trendingTopics = [...new Set(trendingTopics)]; // Remove duplicates
+      }
       
-      return finalTrends;
+      // Method 4: If still not enough, try trending page
+      if (trendingTopics.length < 3) {
+        console.log('🔄 Still not enough trends, trying trending page...');
+        await this.driver.get('https://twitter.com/explore/tabs/trending');
+        await this.driver.sleep(3000);
+        const trendingPageTrends = await this.extractTrendsFromCurrentPage();
+        trendingTopics = [...trendingTopics, ...trendingPageTrends];
+        trendingTopics = [...new Set(trendingTopics)]; // Remove duplicates
+      }
+      
+      // Filter to get only valid trends
+      const validTrends = trendingTopics.filter(trend => this.isValidTrend(trend)).slice(0, 5);
+      
+      if (validTrends.length === 0) {
+        console.log('⚠️ No valid trends found, returning fallback trends');
+        return ['#Technology', '#AI', '#JavaScript', '#WebDevelopment', '#Programming'];
+      }
+      
+      console.log(`✅ Successfully extracted ${validTrends.length} trending topics:`, validTrends);
+      return validTrends;
       
     } catch (error) {
       console.error('❌ Failed to scrape trending topics:', error.message);
-      
-      const fallbackTrends = ['#Technology', '#AI', '#JavaScript', '#WebDevelopment', '#Programming'];
-      
-      return fallbackTrends;
+      return ['#Technology', '#AI', '#JavaScript', '#WebDevelopment', '#Programming'];
     }
   }
 
-  async extractTrendsFromPage() {
-    try {
+  async extractTrendsFromCurrentPage() {
+    const trendingTopics = [];
+    
+    console.log('🔍 Scanning page for trending topics...');
+    
+    // Priority 1: Look for dedicated trending sections first
+    const trendingSelectors = [
+      // Specific trending topic selectors (highest priority)
+      '[data-testid="trend"] > div > div > span',
+      '[data-testid="trend"] span:not(:has(time))',
+      'div[aria-label*="Trending"] span:not(:has(time))',
       
+      // Trending page main content
+      '[data-testid="cellInnerDiv"]:not(:has(time)) [dir="ltr"] span',
+      '[data-testid="cellInnerDiv"] a[href*="/search?q="] span',
       
-      const trendingPageUrl = await this.navigateToTrendingPage();
-      
-      if (!trendingPageUrl) {
+      // Sidebar trending (only from "What's happening" section)
+      '[aria-label*="Timeline: Trending now"] [role="link"] span',
+      '[data-testid="sidebarColumn"] section:has([aria-label*="Trending"]) [role="link"] span'
+    ];
+    
+    for (const selector of trendingSelectors) {
+      try {
+        const elements = await this.driver.findElements(By.css(selector));
+        console.log(`Found ${elements.length} elements with trending selector: ${selector.substring(0, 50)}...`);
         
-        return await this.extractFromCurrentPage();
-      }
-      
-      await this.driver.sleep(3000);
-      
-      
-      const trendingTopics = await this.extractTrendsFromTrendingPage();
-      
-      
-      return trendingTopics;
-      
-    } catch (error) {
-      console.error('❌ Error extracting trends:', error);
-      return await this.extractFromCurrentPage();
-    }
-  }
-
-  async navigateToTrendingPage() {
-    try {
-      const showMoreSelectors = [
-        'a[href*="/explore"]',
-        'a[href*="/i/trends"]', 
-        '[aria-label*="Show more"]',
-        '[role="link"]:has-text("Show more")',
-        'div[data-testid="sidebarColumn"] a[href*="explore"]',
-        'section a[href*="explore"]'
-      ];
-      
-      for (const selector of showMoreSelectors) {
-        try {
-          const elements = await this.driver.findElements(By.css(selector));
-          
-          for (const element of elements) {
-            try {
-              const text = await element.getText();
-              const href = await element.getAttribute('href');
-              
-              console.log(`Found potential "Show more" link: "${text}" -> ${href}`);
-              
-              if (text.toLowerCase().includes('show more') || 
-                  text.toLowerCase().includes('see more') ||
-                  href.includes('/explore') || 
-                  href.includes('/trends')) {
-                
-                
-                await this.driver.executeScript("arguments[0].click();", element);
-                await this.driver.sleep(2000);
-                
-                const currentUrl = await this.driver.getCurrentUrl();
-                console.log(`Navigated to: ${currentUrl}`);
-                return currentUrl;
-              }
-            } catch (e) {
-              continue;
-            }
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-      
-      
-      await this.driver.get('https://twitter.com/explore/tabs/trending');
-      await this.driver.sleep(3000);
-      return await this.driver.getCurrentUrl();
-      
-    } catch (error) {
-      
-      return null;
-    }
-  }
-
-  async extractTrendsFromTrendingPage() {
-    try {
-      
-      const trendingTopics = [];
-      
-      await this.driver.sleep(2000);
-      
-      const trendSelectors = [
-        'div[data-testid="cellInnerDiv"]:not(:has(time)) [dir="ltr"] span',
-        '[data-testid="trend"] span',
-        'div[aria-label*="Trending"] span:not(:has(time))',
-        
-        'a[href*="/search?q="] span',
-        'div[data-testid="cellInnerDiv"] a span',
-        
-        'section div[dir="ltr"] > span'
-      ];
-      
-      for (const selector of trendSelectors) {
-        try {
-          const elements = await this.driver.findElements(By.css(selector));
-          
-          if (elements.length > 0) {
-            console.log(`Found ${elements.length} potential trends with: ${selector}`);
+        for (let i = 0; i < Math.min(elements.length, 15); i++) {
+          try {
+            const text = await elements[i].getText();
             
-            for (let i = 0; i < Math.min(elements.length, 30); i++) {
-              try {
-                const text = await elements[i].getText();
-                
-                if (this.isValidTrend(text) && !this.isNewsContent(text)) {
-                  const cleanText = text.trim();
-                  
-                  if (!trendingTopics.includes(cleanText)) {
-                    const score = this.scoreTrend(cleanText);
-                    
-                    if (score > 0) {
-                      trendingTopics.push(cleanText);
-                      console.log(`Added trend: ${cleanText} (position: ${trendingTopics.length})`);
-                      
-                      if (trendingTopics.length >= 5) break;
-                    }
-                  }
+            if (text && text.trim()) {
+              // Additional filtering to ensure it's a real trend
+              if (this.isActualTrend(text) && this.isValidTrend(text)) {
+                const cleanText = text.trim();
+                if (!trendingTopics.includes(cleanText) && trendingTopics.length < 10) {
+                  trendingTopics.push(cleanText);
+                  console.log(`✅ Found trending topic: ${cleanText}`);
                 }
-              } catch (e) {
-                continue;
               }
             }
+          } catch (e) {
+            continue;
           }
-        } catch (e) {
-          continue;
         }
-        
-        if (trendingTopics.length >= 5) break;
+      } catch (e) {
+        console.log(`Selector failed: ${selector.substring(0, 30)}...`);
+        continue;
       }
       
-      return trendingTopics.slice(0, 5);
-      
-    } catch (error) {
-      
-      return [];
+      // Stop if we have enough good trends
+      if (trendingTopics.length >= 8) break;
     }
-  }
-
-  async extractFromCurrentPage() {
-    try {
+    
+    // Priority 2: If not enough trends, look in broader areas but with stricter filtering
+    if (trendingTopics.length < 3) {
+      console.log('🔄 Not enough trends found, expanding search...');
       
-      
-      const trendingTopics = [];
-      const selectors = [
-        '[data-testid="sidebarColumn"] [role="link"] span',
-        '[data-testid="sidebarColumn"] div[dir="ltr"] span',
-        '[aria-label*="Trending"] span',
-        'div[data-testid="cellInnerDiv"] span'
+      const broaderSelectors = [
+        // Search query links (these are usually trends)
+        'a[href*="/search?q=%23"] span', // Hashtag links
+        'a[href*="/search?q="] span:not(:has(time))',
+        
+        // Sidebar content but exclude news
+        '[data-testid="sidebarColumn"] [role="link"]:not(:has(time)) span'
       ];
       
-      for (const selector of selectors) {
+      for (const selector of broaderSelectors) {
         try {
           const elements = await this.driver.findElements(By.css(selector));
-          for (let i = 0; i < Math.min(elements.length, 20); i++) {
+          
+          for (let i = 0; i < Math.min(elements.length, 10); i++) {
             try {
               const text = await elements[i].getText();
               
-              if (this.isValidTrend(text)) {
+              if (text && text.trim() && this.isActualTrend(text) && this.isValidTrend(text)) {
                 const cleanText = text.trim();
-                
-                if (!trendingTopics.includes(cleanText)) {
+                if (!trendingTopics.includes(cleanText) && trendingTopics.length < 10) {
                   trendingTopics.push(cleanText);
-                  if (trendingTopics.length >= 10) break;
+                  console.log(`✅ Found additional trend: ${cleanText}`);
                 }
               }
             } catch (e) {
@@ -1344,173 +586,66 @@ class TwitterScraper {
           continue;
         }
         
-        if (trendingTopics.length >= 10) break;
+        if (trendingTopics.length >= 8) break;
       }
-      
-      return trendingTopics.slice(0, 5);
-      
-    } catch (error) {
-      
-      return [];
     }
-  }
-
-  async extractTrendsFromLinks() {
-    const trendingTopics = [];
     
-    try {
-      
-      const linkSelectors = [
-        'a[href*="/explore/tabs/trending"]',
-        'a[href*="/search?q="]',
-        '[role="link"][aria-label*="trend"]',
-        '[role="link"] span',
-        'div[data-testid="sidebarColumn"] [role="link"]'
-      ];
-      
-      for (const selector of linkSelectors) {
-        try {
-          const elements = await this.driver.findElements(By.css(selector));
-          
-          if (elements.length > 0) {
-            console.log(`📍 Found ${elements.length} potential trend links with selector: ${selector}`);
-            
-            for (let i = 0; i < Math.min(elements.length, 15); i++) {
-              try {
-                const text = await elements[i].getText();
-                
-                if (this.isValidTrend(text)) {
-                  const cleanText = text.trim();
-                  
-                  if (!trendingTopics.includes(cleanText)) {
-                    const score = this.scoreTrend(cleanText);
-                    
-                    if (score > 0) {
-                      trendingTopics.push(cleanText);
-                      console.log(`✅ Added trend from link: ${cleanText} (score: ${score})`);
-                      
-                      if (trendingTopics.length >= 10) break;
-                    }
-                  }
-                }
-              } catch (e) {
-                continue;
-              }
-            }
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-      
-      return trendingTopics.slice(0, 5);
-      
-    } catch (error) {
-      
-      return [];
-    }
+    return trendingTopics;
   }
 
-  async expandTrendingSection() {
-    try {
-      
-      const showMoreSelectors = [
-        'span:contains("Show more")',
-        'span:contains("See more")',
-        'span:contains("More trends")',
-        'a:contains("Show more")',
-        'a:contains("See more")',
-        '[role="button"]:contains("Show more")',
-        '[role="button"]:contains("See more")',
-        'div:contains("Show more")',
-        'div:contains("See more")'
-      ];
-      
-      const xpathSelectors = [
-        "//span[contains(text(), 'Show more')]",
-        "//span[contains(text(), 'See more')]",
-        "//span[contains(text(), 'More trends')]",
-        "//a[contains(text(), 'Show more')]",
-        "//a[contains(text(), 'See more')]",
-        "//div[@role='button' and contains(text(), 'Show more')]",
-        "//div[@role='button' and contains(text(), 'See more')]",
-        "//div[contains(text(), 'Show more')]",
-        "//div[contains(text(), 'See more')]"
-      ];
-      
-      for (const xpath of xpathSelectors) {
-        try {
-          const elements = await this.driver.findElements(By.xpath(xpath));
-          
-          if (elements.length > 0) {
-            console.log(`📍 Found ${elements.length} "Show more" elements with xpath: ${xpath}`);
-            
-            for (let element of elements) {
-              try {
-                const isDisplayed = await element.isDisplayed();
-                if (isDisplayed) {
-                  
-                  await element.click();
-                  
-                  await this.driver.sleep(2000);
-                  
-                  
-                  return;
-                }
-              } catch (clickError) {
-                
-                continue;
-              }
-            }
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-      
-      
-      
-    } catch (error) {
-      
+  // Additional method to check if text is actually a trend (not news)
+  isActualTrend(text) {
+    if (!text || typeof text !== 'string') return false;
+    
+    const cleanText = text.trim();
+    
+    // Must be reasonably short for a trend
+    if (cleanText.length > 35) return false;
+    
+    // Exclude obvious news indicators
+    const newsIndicators = [
+      /breaking/i,
+      /live/i,
+      /update/i,
+      /report/i,
+      /news/i,
+      /says/i,
+      /announces/i,
+      /confirms/i,
+      /reveals/i,
+      /according to/i,
+      /\d+:\d+/,
+      /AM|PM/i,
+      /yesterday|today|tomorrow/i,
+      /\d+\s+(hours?|minutes?|days?)\s+ago/i,
+      /BBC|CNN|Reuters|AP|Fox News|NBC|ABC|CBS/i
+    ];
+    
+    if (newsIndicators.some(pattern => pattern.test(cleanText))) {
+      return false;
     }
+    
+    // Favor hashtags and short phrases
+    if (cleanText.startsWith('#') || cleanText.length <= 20) {
+      return true;
+    }
+    
+    // Check if it looks like a proper noun or trending topic
+    const trendPatterns = [
+      /^[A-Z][a-z]+$/, // Single capitalized word
+      /^[A-Z][a-z]+[A-Z][a-z]*/, // CamelCase
+      /^#\w+/, // Hashtag
+      /^\w+\d+/, // Word with numbers
+      /^[A-Z]{2,}$/ // All caps abbreviation
+    ];
+    
+    return trendPatterns.some(pattern => pattern.test(cleanText));
   }
 
   async getCurrentIP() {
     try {
-      
-      
-      const ipServices = [
-        'https://api.ipify.org?format=json',
-        'https://ipapi.co/json/',
-        'https://api.myip.com'
-      ];
-      
-      for (const service of ipServices) {
-        try {
-          const response = await axios.get(service, { timeout: 5000 });
-          
-          let ip;
-          if (response.data.ip) {
-            ip = response.data.ip;
-          } else if (response.data.query) {
-            ip = response.data.query;
-          } else if (typeof response.data === 'string') {
-            ip = response.data.trim();
-          }
-          
-          if (ip) {
-            
-            return ip;
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-      
-      const fallbackIP = '192.168.1.100';
-      
-      return fallbackIP;
-      
+      const response = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
+      return response.data.ip;
     } catch (error) {
       console.error('❌ Failed to get IP address:', error.message);
       return '192.168.1.100';
@@ -1521,7 +656,6 @@ class TwitterScraper {
     if (this.driver) {
       try {
         await this.driver.quit();
-        
       } catch (error) {
         console.error('⚠️ Error closing WebDriver:', error.message);
       }
