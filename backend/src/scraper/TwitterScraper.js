@@ -294,20 +294,92 @@ class TwitterScraper {
       
       // Navigate to login page
       await this.driver.get('https://twitter.com/i/flow/login');
-      await this.driver.sleep(3000);
+      await this.driver.sleep(5000); // Longer wait for production
       
-      // Step 1: Enter username
+      // Step 1: Enter username with multiple selectors and longer timeout
       console.log('📝 Entering username...');
-      const usernameField = await this.driver.wait(
-        until.elementLocated(By.css('input[autocomplete="username"]')),
-        10000
-      );
+      
+      const usernameSelectors = [
+        'input[autocomplete="username"]',
+        'input[name="text"]',
+        'input[data-testid="ocfEnterTextTextInput"]',
+        'input[type="text"]',
+        'input[placeholder*="username"]',
+        'input[placeholder*="Username"]',
+        'input[placeholder*="email"]',
+        'input[placeholder*="Email"]'
+      ];
+      
+      let usernameField = null;
+      const maxTimeout = process.env.NODE_ENV === 'production' ? 30000 : 15000; // 30s for production
+      
+      console.log(`⏳ Waiting up to ${maxTimeout/1000}s for username field...`);
+      
+      // Try each selector until we find one that works
+      for (const selector of usernameSelectors) {
+        try {
+          console.log(`🔍 Trying selector: ${selector}`);
+          usernameField = await this.driver.wait(
+            until.elementLocated(By.css(selector)),
+            5000 // 5s per selector
+          );
+          
+          if (await usernameField.isDisplayed()) {
+            console.log(`✅ Found username field with selector: ${selector}`);
+            break;
+          } else {
+            usernameField = null;
+          }
+        } catch (e) {
+          console.log(`❌ Selector failed: ${selector}`);
+          continue;
+        }
+      }
+      
+      if (!usernameField) {
+        // Final attempt with longer wait on the primary selector
+        console.log('🔄 Making final attempt with primary selector...');
+        try {
+          usernameField = await this.driver.wait(
+            until.elementLocated(By.css('input[autocomplete="username"]')),
+            maxTimeout
+          );
+        } catch (finalError) {
+          throw new Error(`Could not find username field after trying all selectors. Page may not have loaded properly.`);
+        }
+      }
+      
       await usernameField.clear();
       await usernameField.sendKeys(process.env.X_USERNAME);
       
-      const nextButton = await this.driver.findElement(By.xpath('//span[text()="Next"]'));
+      // Find and click Next button with multiple selectors
+      const nextButtonSelectors = [
+        '//span[text()="Next"]',
+        '//button[contains(text(), "Next")]',
+        '//div[contains(text(), "Next")]',
+        '//span[contains(text(), "Next")]',
+        '[data-testid="LoginForm_Login_Button"]'
+      ];
+      
+      let nextButton = null;
+      for (const selector of nextButtonSelectors) {
+        try {
+          nextButton = await this.driver.findElement(By.xpath(selector));
+          if (await nextButton.isDisplayed()) {
+            console.log(`✅ Found Next button with selector: ${selector}`);
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!nextButton) {
+        throw new Error('Could not find Next button');
+      }
+      
       await nextButton.click();
-      await this.driver.sleep(3000);
+      await this.driver.sleep(5000); // Longer wait for production
       
       // Step 2: Check what is required next (password or email)
       console.log('🔍 Checking what input is required...');
@@ -315,29 +387,51 @@ class TwitterScraper {
       let passwordField = null;
       let emailField = null;
       
-      // Check for password field
-      try {
-        passwordField = await this.driver.findElement(By.css('input[type="password"]'));
-        if (await passwordField.isDisplayed()) {
-          console.log('🔒 Password field found');
-        } else {
-          passwordField = null;
+      // Check for password field with multiple selectors
+      const passwordSelectors = [
+        'input[type="password"]',
+        'input[name="password"]',
+        'input[autocomplete="current-password"]',
+        'input[data-testid="ocfEnterTextTextInput"][type="password"]'
+      ];
+      
+      for (const selector of passwordSelectors) {
+        try {
+          passwordField = await this.driver.findElement(By.css(selector));
+          if (await passwordField.isDisplayed()) {
+            console.log(`🔒 Found password field with selector: ${selector}`);
+            break;
+          } else {
+            passwordField = null;
+          }
+        } catch (e) {
+          continue;
         }
-      } catch (e) {
-        // Password field not found
       }
       
       // Check for email field if password not found
       if (!passwordField) {
-        try {
-          emailField = await this.driver.findElement(By.css('input[data-testid="ocfEnterTextTextInput"]'));
-          if (await emailField.isDisplayed()) {
-            console.log('📧 Email field found');
-          } else {
-            emailField = null;
+        const emailSelectors = [
+          'input[data-testid="ocfEnterTextTextInput"]',
+          'input[name="text"]',
+          'input[type="email"]',
+          'input[autocomplete="email"]',
+          'input[placeholder*="email"]',
+          'input[placeholder*="Email"]'
+        ];
+        
+        for (const selector of emailSelectors) {
+          try {
+            emailField = await this.driver.findElement(By.css(selector));
+            if (await emailField.isDisplayed()) {
+              console.log(`📧 Found email field with selector: ${selector}`);
+              break;
+            } else {
+              emailField = null;
+            }
+          } catch (e) {
+            continue;
           }
-        } catch (e) {
-          // Email field not found
         }
       }
       
@@ -347,61 +441,191 @@ class TwitterScraper {
         await passwordField.clear();
         await passwordField.sendKeys(process.env.X_PASSWORD);
         
-        const loginButton = await this.driver.findElement(By.xpath('//span[text()="Log in"]'));
+        const loginButtonSelectors = [
+          '//span[text()="Log in"]',
+          '//button[contains(text(), "Log in")]',
+          '//div[contains(text(), "Log in")]',
+          '[data-testid="LoginForm_Login_Button"]'
+        ];
+        
+        let loginButton = null;
+        for (const selector of loginButtonSelectors) {
+          try {
+            loginButton = await this.driver.findElement(By.xpath(selector));
+            if (await loginButton.isDisplayed()) {
+              console.log(`✅ Found login button with selector: ${selector}`);
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (!loginButton) {
+          throw new Error('Could not find login button');
+        }
+        
         await loginButton.click();
-        await this.driver.sleep(3000);
+        await this.driver.sleep(5000);
         
       } else if (emailField) {
         console.log('📧 Entering email...');
         await emailField.clear();
         await emailField.sendKeys(process.env.X_EMAIL);
         
-        const nextEmailButton = await this.driver.findElement(By.xpath('//span[text()="Next"]'));
+        const nextEmailButtonSelectors = [
+          '//span[text()="Next"]',
+          '//button[contains(text(), "Next")]',
+          '[data-testid="ocfEnterTextNextButton"]'
+        ];
+        
+        let nextEmailButton = null;
+        for (const selector of nextEmailButtonSelectors) {
+          try {
+            nextEmailButton = await this.driver.findElement(By.xpath(selector));
+            if (await nextEmailButton.isDisplayed()) {
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (!nextEmailButton) {
+          throw new Error('Could not find Next button after email');
+        }
+        
         await nextEmailButton.click();
-        await this.driver.sleep(3000);
+        await this.driver.sleep(5000);
         
         // Now enter password
         console.log('🔒 Entering password after email verification...');
-        const passwordFieldAfterEmail = await this.driver.wait(
-          until.elementLocated(By.css('input[type="password"]')),
-          10000
-        );
+        let passwordFieldAfterEmail = null;
+        
+        for (const selector of passwordSelectors) {
+          try {
+            passwordFieldAfterEmail = await this.driver.wait(
+              until.elementLocated(By.css(selector)),
+              15000
+            );
+            if (await passwordFieldAfterEmail.isDisplayed()) {
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (!passwordFieldAfterEmail) {
+          throw new Error('Could not find password field after email verification');
+        }
+        
         await passwordFieldAfterEmail.clear();
         await passwordFieldAfterEmail.sendKeys(process.env.X_PASSWORD);
         
-        const loginButton = await this.driver.findElement(By.xpath('//span[text()="Log in"]'));
+        let loginButton = null;
+        const loginButtonSelectors = [
+          '//span[text()="Log in"]',
+          '//button[contains(text(), "Log in")]',
+          '[data-testid="LoginForm_Login_Button"]'
+        ];
+        
+        for (const selector of loginButtonSelectors) {
+          try {
+            loginButton = await this.driver.findElement(By.xpath(selector));
+            if (await loginButton.isDisplayed()) {
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (!loginButton) {
+          throw new Error('Could not find login button after password');
+        }
+        
         await loginButton.click();
-        await this.driver.sleep(3000);
+        await this.driver.sleep(5000);
       } else {
         throw new Error('Could not find password or email field');
       }
       
-      // Step 4: Check if anything else is required
+      // Step 4: Check for additional verification
       console.log('🔍 Checking for additional verification...');
-      await this.driver.sleep(2000);
+      await this.driver.sleep(3000);
       
       try {
-        const additionalField = await this.driver.findElement(By.css('input[data-testid="ocfEnterTextTextInput"]'));
-        if (await additionalField.isDisplayed()) {
+        const additionalSelectors = [
+          'input[data-testid="ocfEnterTextTextInput"]',
+          'input[name="text"]',
+          'input[type="email"]'
+        ];
+        
+        let additionalField = null;
+        for (const selector of additionalSelectors) {
+          try {
+            additionalField = await this.driver.findElement(By.css(selector));
+            if (await additionalField.isDisplayed()) {
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (additionalField) {
           console.log('📧 Additional email verification required...');
           await additionalField.clear();
           await additionalField.sendKeys(process.env.X_EMAIL);
           
-          const continueButton = await this.driver.findElement(By.xpath('//span[text()="Next"]'));
-          await continueButton.click();
-          await this.driver.sleep(3000);
+          const continueButtonSelectors = [
+            '//span[text()="Next"]',
+            '//span[text()="Continue"]',
+            '//button[contains(text(), "Next")]',
+            '[data-testid="ocfEnterTextNextButton"]'
+          ];
+          
+          let continueButton = null;
+          for (const selector of continueButtonSelectors) {
+            try {
+              continueButton = await this.driver.findElement(By.xpath(selector));
+              if (await continueButton.isDisplayed()) {
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+          
+          if (continueButton) {
+            await continueButton.click();
+            await this.driver.sleep(5000);
+          }
         }
       } catch (e) {
         console.log('ℹ️ No additional verification required');
       }
       
-      // Step 5: Wait for login completion
+      // Step 5: Wait for login completion with extended timeout for production
       console.log('⏳ Waiting for login to complete...');
-      await this.driver.wait(
-        until.urlContains('home'),
-        15000
-      );
-      console.log('✅ Successfully logged in to X');
+      const loginTimeout = process.env.NODE_ENV === 'production' ? 30000 : 15000;
+      
+      try {
+        await this.driver.wait(
+          until.urlContains('home'),
+          loginTimeout
+        );
+        console.log('✅ Successfully logged in to X');
+      } catch (timeoutError) {
+        // Check if we're actually logged in by URL
+        const currentUrl = await this.driver.getCurrentUrl();
+        if (currentUrl.includes('home') || (currentUrl.includes('x.com') && !currentUrl.includes('login'))) {
+          console.log('✅ Login appears successful based on URL');
+        } else {
+          throw new Error(`Login timeout - still on: ${currentUrl}`);
+        }
+      }
       
     } catch (error) {
       console.error('❌ Login failed:', error.message);
@@ -418,64 +642,111 @@ class TwitterScraper {
       await this.driver.sleep(5000); // Wait longer for page load
       
       let trendingTopics = [];
+      let navigatedToTrends = false;
       
-      // Method 1: Try to find and click "Show more" button
-      console.log('🔍 Looking for "Show more" button...');
+      // Method 1: Try to find and click "Show more" button in What's happening section
+      console.log('🔍 Looking for "Show more" button in What\'s happening section...');
       try {
+        // More specific selectors for the "Show more" button in trending section
         const showMoreSelectors = [
+          // Target the specific "Show more" in trending/what's happening section
+          "//div[contains(@aria-label, 'Timeline: Trending now')]//span[contains(text(), 'Show more')]",
+          "//section[contains(@aria-labelledby, 'accessible-list')]//span[contains(text(), 'Show more')]",
+          "//div[@data-testid='sidebarColumn']//span[contains(text(), 'Show more')]",
+          "//div[@data-testid='sidebarColumn']//a[contains(text(), 'Show more')]",
+          
+          // Generic fallbacks
           "//span[contains(text(), 'Show more')]",
           "//a[contains(text(), 'Show more')]",
-          "//div[contains(text(), 'Show more')]",
           "//span[contains(text(), 'See more')]",
-          "//a[contains(@href, '/explore')]"
+          
+          // Direct links to explore/trending
+          "//a[contains(@href, '/explore')]",
+          "//a[contains(@href, '/trending')]"
         ];
         
-        let showMoreClicked = false;
         for (const selector of showMoreSelectors) {
           try {
-            const showMoreButton = await this.driver.findElement(By.xpath(selector));
-            if (await showMoreButton.isDisplayed()) {
-              console.log('✅ Found "Show more" button, clicking...');
-              await this.driver.executeScript("arguments[0].click();", showMoreButton);
-              await this.driver.sleep(3000);
-              showMoreClicked = true;
-              break;
+            const showMoreElements = await this.driver.findElements(By.xpath(selector));
+            
+            for (const element of showMoreElements) {
+              try {
+                if (await element.isDisplayed()) {
+                  console.log(`✅ Found "Show more" button with selector: ${selector.substring(0, 50)}...`);
+                  
+                  // Click the button
+                  await this.driver.executeScript("arguments[0].click();", element);
+                  await this.driver.sleep(4000); // Wait for navigation
+                  
+                  // Check if we were redirected to a trending page
+                  const currentUrl = await this.driver.getCurrentUrl();
+                  console.log(`🔍 Current URL after click: ${currentUrl}`);
+                  
+                  if (currentUrl.includes('/explore') || currentUrl.includes('/trending')) {
+                    console.log('✅ Successfully navigated to trending page');
+                    navigatedToTrends = true;
+                    break;
+                  } else {
+                    console.log('ℹ️ Click did not navigate to trending page, trying next selector...');
+                    // Go back to home page for next attempt
+                    await this.driver.get('https://twitter.com/home');
+                    await this.driver.sleep(3000);
+                  }
+                }
+              } catch (clickError) {
+                console.log(`❌ Failed to click element: ${clickError.message}`);
+                continue;
+              }
             }
+            
+            if (navigatedToTrends) break;
           } catch (e) {
             continue;
           }
         }
         
-        if (!showMoreClicked) {
-          console.log('ℹ️ No "Show more" button found, trying direct navigation...');
-          // Try to navigate directly to explore page
+        // If no show more button worked, try direct navigation
+        if (!navigatedToTrends) {
+          console.log('ℹ️ No working "Show more" button found, trying direct navigation...');
           await this.driver.get('https://twitter.com/explore/tabs/trending');
-          await this.driver.sleep(3000);
+          await this.driver.sleep(4000);
+          
+          const currentUrl = await this.driver.getCurrentUrl();
+          if (currentUrl.includes('/explore') || currentUrl.includes('/trending')) {
+            console.log('✅ Successfully navigated to trending page via direct URL');
+            navigatedToTrends = true;
+          }
         }
       } catch (e) {
-        console.log('⚠️ Error with show more button, trying alternative approach...');
+        console.log('⚠️ Error with show more button navigation:', e.message);
       }
       
-      // Method 2: Extract trends from current page
+      // Method 2: Extract trends from current page (should be trending page now)
       console.log('🎯 Extracting trends from current page...');
-      trendingTopics = await this.extractTrendsFromCurrentPage();
+      if (navigatedToTrends) {
+        // We're on a dedicated trending page, use trending-specific extraction
+        trendingTopics = await this.extractTrendsFromTrendingPage();
+      } else {
+        // We're still on home page, extract from sidebar
+        trendingTopics = await this.extractTrendsFromHomePage();
+      }
       
       // Method 3: If not enough trends, try explore page
       if (trendingTopics.length < 3) {
         console.log('🔄 Not enough trends found, trying explore page...');
         await this.driver.get('https://twitter.com/explore');
-        await this.driver.sleep(3000);
-        const exploreTrends = await this.extractTrendsFromCurrentPage();
+        await this.driver.sleep(4000);
+        const exploreTrends = await this.extractTrendsFromTrendingPage();
         trendingTopics = [...trendingTopics, ...exploreTrends];
         trendingTopics = [...new Set(trendingTopics)]; // Remove duplicates
       }
       
-      // Method 4: If still not enough, try trending page
+      // Method 4: If still not enough, try dedicated trending page
       if (trendingTopics.length < 3) {
-        console.log('🔄 Still not enough trends, trying trending page...');
+        console.log('🔄 Still not enough trends, trying dedicated trending page...');
         await this.driver.get('https://twitter.com/explore/tabs/trending');
-        await this.driver.sleep(3000);
-        const trendingPageTrends = await this.extractTrendsFromCurrentPage();
+        await this.driver.sleep(4000);
+        const trendingPageTrends = await this.extractTrendsFromTrendingPage();
         trendingTopics = [...trendingTopics, ...trendingPageTrends];
         trendingTopics = [...new Set(trendingTopics)]; // Remove duplicates
       }
@@ -497,41 +768,45 @@ class TwitterScraper {
     }
   }
 
-  async extractTrendsFromCurrentPage() {
+  // Specialized method for extracting trends from dedicated trending pages
+  async extractTrendsFromTrendingPage() {
     const trendingTopics = [];
     
-    console.log('🔍 Scanning page for trending topics...');
+    console.log('🔍 Scanning trending page for trending topics...');
     
-    // Priority 1: Look for dedicated trending sections first
-    const trendingSelectors = [
-      // Specific trending topic selectors (highest priority)
+    // Trending page specific selectors (highest priority)
+    const trendingPageSelectors = [
+      // Main trending content on explore/trending pages
       '[data-testid="trend"] > div > div > span',
       '[data-testid="trend"] span:not(:has(time))',
-      'div[aria-label*="Trending"] span:not(:has(time))',
-      
-      // Trending page main content
-      '[data-testid="cellInnerDiv"]:not(:has(time)) [dir="ltr"] span',
+      '[data-testid="cellInnerDiv"] > div > div > span:first-child',
       '[data-testid="cellInnerDiv"] a[href*="/search?q="] span',
       
-      // Sidebar trending (only from "What's happening" section)
-      '[aria-label*="Timeline: Trending now"] [role="link"] span',
-      '[data-testid="sidebarColumn"] section:has([aria-label*="Trending"]) [role="link"] span'
+      // Trending list items
+      'div[aria-label*="Trending"] span:not(:has(time))',
+      'section[aria-labelledby*="accessible-list"] [role="link"] span',
+      
+      // Search query links (usually trends)
+      'a[href*="/search?q=%23"] span', // Hashtag links
+      'a[href*="/search?q="] span:first-child',
+      
+      // Main content area trending
+      '[data-testid="cellInnerDiv"]:not(:has(time)) [dir="ltr"] span:first-child'
     ];
     
-    for (const selector of trendingSelectors) {
+    for (const selector of trendingPageSelectors) {
       try {
         const elements = await this.driver.findElements(By.css(selector));
-        console.log(`Found ${elements.length} elements with trending selector: ${selector.substring(0, 50)}...`);
+        console.log(`Found ${elements.length} elements with trending page selector: ${selector.substring(0, 50)}...`);
         
-        for (let i = 0; i < Math.min(elements.length, 15); i++) {
+        for (let i = 0; i < Math.min(elements.length, 20); i++) {
           try {
             const text = await elements[i].getText();
             
             if (text && text.trim()) {
-              // Additional filtering to ensure it's a real trend
               if (this.isActualTrend(text) && this.isValidTrend(text)) {
                 const cleanText = text.trim();
-                if (!trendingTopics.includes(cleanText) && trendingTopics.length < 10) {
+                if (!trendingTopics.includes(cleanText) && trendingTopics.length < 15) {
                   trendingTopics.push(cleanText);
                   console.log(`✅ Found trending topic: ${cleanText}`);
                 }
@@ -542,55 +817,82 @@ class TwitterScraper {
           }
         }
       } catch (e) {
-        console.log(`Selector failed: ${selector.substring(0, 30)}...`);
+        console.log(`Trending page selector failed: ${selector.substring(0, 30)}...`);
         continue;
       }
       
       // Stop if we have enough good trends
-      if (trendingTopics.length >= 8) break;
-    }
-    
-    // Priority 2: If not enough trends, look in broader areas but with stricter filtering
-    if (trendingTopics.length < 3) {
-      console.log('🔄 Not enough trends found, expanding search...');
-      
-      const broaderSelectors = [
-        // Search query links (these are usually trends)
-        'a[href*="/search?q=%23"] span', // Hashtag links
-        'a[href*="/search?q="] span:not(:has(time))',
-        
-        // Sidebar content but exclude news
-        '[data-testid="sidebarColumn"] [role="link"]:not(:has(time)) span'
-      ];
-      
-      for (const selector of broaderSelectors) {
-        try {
-          const elements = await this.driver.findElements(By.css(selector));
-          
-          for (let i = 0; i < Math.min(elements.length, 10); i++) {
-            try {
-              const text = await elements[i].getText();
-              
-              if (text && text.trim() && this.isActualTrend(text) && this.isValidTrend(text)) {
-                const cleanText = text.trim();
-                if (!trendingTopics.includes(cleanText) && trendingTopics.length < 10) {
-                  trendingTopics.push(cleanText);
-                  console.log(`✅ Found additional trend: ${cleanText}`);
-                }
-              }
-            } catch (e) {
-              continue;
-            }
-          }
-        } catch (e) {
-          continue;
-        }
-        
-        if (trendingTopics.length >= 8) break;
-      }
+      if (trendingTopics.length >= 10) break;
     }
     
     return trendingTopics;
+  }
+
+  // Specialized method for extracting trends from home page sidebar
+  async extractTrendsFromHomePage() {
+    const trendingTopics = [];
+    
+    console.log('🔍 Scanning home page sidebar for trending topics...');
+    
+    // Home page sidebar specific selectors
+    const sidebarSelectors = [
+      // Sidebar trending section (What's happening)
+      '[data-testid="sidebarColumn"] [aria-label*="Timeline: Trending now"] [role="link"] span',
+      '[data-testid="sidebarColumn"] section [role="link"] span:first-child',
+      '[data-testid="sidebarColumn"] [role="link"] span[dir="ltr"]',
+      
+      // What's happening section
+      '[aria-label*="Timeline: Trending now"] span:not(:has(time))',
+      '[data-testid="sidebarColumn"] div[dir="ltr"] span:first-child',
+      
+      // Trending in sidebar
+      '[data-testid="sidebarColumn"] a[href*="/search?q="] span'
+    ];
+    
+    for (const selector of sidebarSelectors) {
+      try {
+        const elements = await this.driver.findElements(By.css(selector));
+        console.log(`Found ${elements.length} elements with sidebar selector: ${selector.substring(0, 50)}...`);
+        
+        for (let i = 0; i < Math.min(elements.length, 15); i++) {
+          try {
+            const text = await elements[i].getText();
+            
+            if (text && text.trim()) {
+              if (this.isActualTrend(text) && this.isValidTrend(text)) {
+                const cleanText = text.trim();
+                if (!trendingTopics.includes(cleanText) && trendingTopics.length < 10) {
+                  trendingTopics.push(cleanText);
+                  console.log(`✅ Found sidebar trend: ${cleanText}`);
+                }
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+      } catch (e) {
+        console.log(`Sidebar selector failed: ${selector.substring(0, 30)}...`);
+        continue;
+      }
+      
+      // Stop if we have enough trends
+      if (trendingTopics.length >= 8) break;
+    }
+    
+    return trendingTopics;
+  }
+
+  // Legacy method kept for compatibility
+  async extractTrendsFromCurrentPage() {
+    // Check current URL to determine which extraction method to use
+    const currentUrl = await this.driver.getCurrentUrl();
+    
+    if (currentUrl.includes('/explore') || currentUrl.includes('/trending')) {
+      return await this.extractTrendsFromTrendingPage();
+    } else {
+      return await this.extractTrendsFromHomePage();
+    }
   }
 
   // Additional method to check if text is actually a trend (not news)
