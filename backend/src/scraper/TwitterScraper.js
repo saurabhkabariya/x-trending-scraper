@@ -559,7 +559,8 @@ class TwitterScraper {
         const additionalSelectors = [
           'input[data-testid="ocfEnterTextTextInput"]',
           'input[name="text"]',
-          'input[type="email"]'
+          'input[type="email"]',
+          'input[autocomplete="email"]'
         ];
         
         let additionalField = null;
@@ -567,6 +568,7 @@ class TwitterScraper {
           try {
             additionalField = await this.driver.findElement(By.css(selector));
             if (await additionalField.isDisplayed()) {
+              console.log(`✅ Found additional field with selector: ${selector}`);
               break;
             }
           } catch (e) {
@@ -578,19 +580,32 @@ class TwitterScraper {
           console.log('📧 Additional email verification required...');
           await additionalField.clear();
           await additionalField.sendKeys(process.env.X_EMAIL);
+          console.log('✅ Email entered successfully');
+          
+          // Wait a moment for the page to process the input
+          await this.driver.sleep(2000);
           
           const continueButtonSelectors = [
             '//span[text()="Next"]',
             '//span[text()="Continue"]',
+            '//span[text()="Verify"]',
             '//button[contains(text(), "Next")]',
-            '[data-testid="ocfEnterTextNextButton"]'
+            '//button[contains(text(), "Continue")]',
+            '//button[contains(text(), "Verify")]',
+            '[data-testid="ocfEnterTextNextButton"]',
+            '//div[@data-testid="ocfEnterTextNextButton"]',
+            '//span[contains(text(), "Submit")]'
           ];
           
           let continueButton = null;
+          let usedSelector = '';
+          
           for (const selector of continueButtonSelectors) {
             try {
               continueButton = await this.driver.findElement(By.xpath(selector));
-              if (await continueButton.isDisplayed()) {
+              if (await continueButton.isDisplayed() && await continueButton.isEnabled()) {
+                usedSelector = selector;
+                console.log(`✅ Found continue button with selector: ${selector}`);
                 break;
               }
             } catch (e) {
@@ -599,12 +614,84 @@ class TwitterScraper {
           }
           
           if (continueButton) {
+            console.log('🔄 Clicking continue button...');
             await continueButton.click();
-            await this.driver.sleep(5000);
+            console.log('✅ Continue button clicked successfully');
+            await this.driver.sleep(5000); // Wait longer for processing
+            
+            // Check if we need to handle any additional steps
+            const currentUrl = await this.driver.getCurrentUrl();
+            console.log(`🔍 URL after continue button: ${currentUrl}`);
+            
+            // If still on login flow, try to detect and skip any remaining verification
+            if (currentUrl.includes('/flow/login') || currentUrl.includes('/login')) {
+              console.log('🔄 Still on login flow, checking for additional steps...');
+              
+              // Check for any skip options or try direct navigation
+              try {
+                const skipSelectors = [
+                  '//span[text()="Skip"]',
+                  '//span[text()="Skip for now"]',
+                  '//span[text()="Not now"]',
+                  '//button[contains(text(), "Skip")]',
+                  '//a[contains(text(), "Skip")]'
+                ];
+                
+                let skipButton = null;
+                for (const selector of skipSelectors) {
+                  try {
+                    skipButton = await this.driver.findElement(By.xpath(selector));
+                    if (await skipButton.isDisplayed()) {
+                      console.log(`✅ Found skip button: ${selector}`);
+                      await skipButton.click();
+                      console.log('✅ Skip button clicked');
+                      await this.driver.sleep(3000);
+                      break;
+                    }
+                  } catch (e) {
+                    continue;
+                  }
+                }
+                
+                // If no skip button, try direct navigation to home
+                if (!skipButton) {
+                  console.log('🏠 No skip button found, trying direct navigation to home...');
+                  await this.driver.get('https://twitter.com/home');
+                  await this.driver.sleep(5000);
+                }
+              } catch (skipError) {
+                console.log('⚠️ Error during skip attempt:', skipError.message);
+              }
+            }
+          } else {
+            console.log('⚠️ Could not find continue button after email verification');
+            console.log('🔍 Available buttons on page:');
+            
+            // Debug: List all visible buttons on the page
+            try {
+              const allButtons = await this.driver.findElements(By.css('button, [role="button"], span'));
+              for (let i = 0; i < Math.min(allButtons.length, 10); i++) {
+                try {
+                  const buttonText = await allButtons[i].getText();
+                  if (buttonText && buttonText.trim()) {
+                    console.log(`  - Button: "${buttonText.trim()}"`);
+                  }
+                } catch (e) {
+                  // Ignore errors when getting button text
+                }
+              }
+            } catch (debugError) {
+              console.log('Could not list buttons for debugging');
+            }
+            
+            // Try to proceed anyway
+            console.log('🔄 Attempting to proceed without clicking continue button...');
           }
+        } else {
+          console.log('ℹ️ No additional verification field found');
         }
       } catch (e) {
-        console.log('ℹ️ No additional verification required');
+        console.log('⚠️ Error during additional verification:', e.message);
       }
       
       // Step 5: Wait for login completion with extended timeout for production
@@ -618,12 +705,105 @@ class TwitterScraper {
         );
         console.log('✅ Successfully logged in to X');
       } catch (timeoutError) {
-        // Check if we're actually logged in by URL
-        const currentUrl = await this.driver.getCurrentUrl();
-        if (currentUrl.includes('home') || (currentUrl.includes('x.com') && !currentUrl.includes('login'))) {
-          console.log('✅ Login appears successful based on URL');
+        console.log('⏰ Login timeout occurred, performing extended verification...');
+        
+        // Extended verification with multiple checks and fallback navigation
+        let verificationAttempts = 0;
+        const maxVerificationAttempts = 3;
+        
+        while (verificationAttempts < maxVerificationAttempts) {
+          verificationAttempts++;
+          console.log(`🔍 Login verification attempt ${verificationAttempts}/${maxVerificationAttempts}`);
+          
+          const currentUrl = await this.driver.getCurrentUrl();
+          console.log(`📍 Current URL: ${currentUrl}`);
+          
+          // Check various success indicators
+          const isLoggedIn = currentUrl.includes('home') || 
+                           (currentUrl.includes('x.com') && !currentUrl.includes('login') && !currentUrl.includes('flow')) ||
+                           currentUrl.includes('i/bookmarks') ||
+                           currentUrl.includes('notifications') ||
+                           currentUrl.includes('explore');
+          
+          if (isLoggedIn) {
+            console.log('✅ Login verification successful based on URL');
+            break;
+          }
+          
+          // Try navigating to home if still on login/flow page
+          if (currentUrl.includes('login') || currentUrl.includes('flow')) {
+            console.log('🔄 Still on login/flow page, attempting direct navigation...');
+            
+            try {
+              await this.driver.get('https://twitter.com/home');
+              await this.driver.sleep(5000);
+              
+              const newUrl = await this.driver.getCurrentUrl();
+              console.log(`📍 After navigation, URL: ${newUrl}`);
+              
+              if (newUrl.includes('home') || (newUrl.includes('x.com') && !newUrl.includes('login'))) {
+                console.log('✅ Direct navigation successful - login verified');
+                break;
+              }
+            } catch (navError) {
+              console.log('⚠️ Navigation attempt failed:', navError.message);
+            }
+          }
+          
+          // Check for any remaining verification screens
+          try {
+            const bodyText = await this.driver.findElement(By.css('body')).getText();
+            
+            if (bodyText.includes('Welcome to X') || 
+                bodyText.includes('Home') || 
+                bodyText.includes('Timeline') ||
+                bodyText.includes('What\'s happening')) {
+              console.log('✅ Login successful based on page content');
+              break;
+            }
+            
+            // Look for any remaining continue/finish buttons
+            const finalButtons = [
+              'Continue to X', 'Continue', 'Finish', 'Done', 'Get started',
+              'Skip for now', 'Not now', 'Maybe later'
+            ];
+            
+            for (const buttonText of finalButtons) {
+              try {
+                const button = await this.driver.findElement(
+                  By.xpath(`//span[contains(text(), "${buttonText}")]//ancestor::button | //button[contains(text(), "${buttonText}")]`)
+                );
+                
+                if (await button.isDisplayed()) {
+                  console.log(`🔘 Found final button: "${buttonText}", clicking...`);
+                  await button.click();
+                  await this.driver.sleep(3000);
+                  break;
+                }
+              } catch (e) {
+                // Continue searching
+              }
+            }
+            
+          } catch (contentError) {
+            console.log('⚠️ Could not check page content:', contentError.message);
+          }
+          
+          if (verificationAttempts < maxVerificationAttempts) {
+            console.log('⏳ Waiting before next verification attempt...');
+            await this.driver.sleep(5000);
+          }
+        }
+        
+        // Final verification
+        const finalUrl = await this.driver.getCurrentUrl();
+        console.log(`📍 Final verification URL: ${finalUrl}`);
+        
+        if (finalUrl.includes('home') || 
+            (finalUrl.includes('x.com') && !finalUrl.includes('login') && !finalUrl.includes('flow'))) {
+          console.log('✅ Login verification completed successfully');
         } else {
-          throw new Error(`Login timeout - still on: ${currentUrl}`);
+          throw new Error(`Login verification failed - final URL: ${finalUrl}`);
         }
       }
       
