@@ -931,11 +931,43 @@ class TwitterScraper {
         trendingTopics = [...new Set(trendingTopics)]; // Remove duplicates
       }
       
-      // Filter to get only valid trends
-      const validTrends = trendingTopics.filter(trend => this.isValidTrend(trend)).slice(0, 5);
+      // Method 5: Try search approach if we still don't have real trends
+      if (trendingTopics.length < 3 || trendingTopics.every(trend => 
+        ['New to X?', 'Create account', 'Terms of Service', 'Privacy Policy', 'Cookie Use.', 'Cookie Policy'].includes(trend)
+      )) {
+        console.log('🔄 Detected UI elements instead of trends, trying search-based extraction...');
+        const searchTrends = await this.extractTrendsFromSearch();
+        if (searchTrends.length > 0) {
+          trendingTopics = [...searchTrends, ...trendingTopics.filter(t => this.isActualTrend(t))];
+          trendingTopics = [...new Set(trendingTopics)]; // Remove duplicates
+        }
+      }
+      
+      // Filter to get only valid trends and exclude UI elements
+      const validTrends = trendingTopics
+        .filter(trend => this.isValidTrend(trend) && this.isActualTrend(trend))
+        .filter(trend => !['New to X?', 'Create account', 'Terms of Service', 'Privacy Policy', 'Cookie Use.', 'Cookie Policy'].includes(trend))
+        .slice(0, 5);
       
       if (validTrends.length === 0) {
-        console.log('⚠️ No valid trends found, returning fallback trends');
+        console.log('⚠️ No valid trends found after filtering, trying one more approach...');
+        
+        // Final attempt: Try mobile version which sometimes has cleaner structure
+        try {
+          await this.driver.get('https://mobile.twitter.com/explore');
+          await this.driver.sleep(3000);
+          const mobileTrends = await this.extractTrendsFromTrendingPage();
+          const cleanMobileTrends = mobileTrends.filter(trend => this.isActualTrend(trend));
+          
+          if (cleanMobileTrends.length > 0) {
+            console.log(`✅ Found ${cleanMobileTrends.length} trends from mobile version:`, cleanMobileTrends);
+            return cleanMobileTrends.slice(0, 5);
+          }
+        } catch (mobileError) {
+          console.log('Mobile fallback failed:', mobileError.message);
+        }
+        
+        console.log('⚠️ All extraction methods failed, returning fallback trends');
         return ['#Technology', '#AI', '#JavaScript', '#WebDevelopment', '#Programming'];
       }
       
@@ -954,24 +986,23 @@ class TwitterScraper {
     
     console.log('🔍 Scanning trending page for trending topics...');
     
-    // Trending page specific selectors (highest priority)
+    // More specific trending page selectors to avoid UI elements
     const trendingPageSelectors = [
-      // Main trending content on explore/trending pages
-      '[data-testid="trend"] > div > div > span',
-      '[data-testid="trend"] span:not(:has(time))',
-      '[data-testid="cellInnerDiv"] > div > div > span:first-child',
-      '[data-testid="cellInnerDiv"] a[href*="/search?q="] span',
+      // Most specific - trending items in main content area
+      '[data-testid="trend"] [dir="ltr"] span:first-child',
+      '[data-testid="trend"] > div:first-child > div:first-child > span',
+      '[data-testid="cellInnerDiv"] [role="link"] span:first-child',
       
-      // Trending list items
-      'div[aria-label*="Trending"] span:not(:has(time))',
-      'section[aria-labelledby*="accessible-list"] [role="link"] span',
+      // Search query links (hashtags and trending terms)
+      'a[href*="/search?q=%23"]:not([href*="src="]) span', // Hashtag links, excluding promoted
+      'a[href*="/search?q="]:not([href*="src="]):not([href*="ref_"]) span:first-child',
       
-      // Search query links (usually trends)
-      'a[href*="/search?q=%23"] span', // Hashtag links
-      'a[href*="/search?q="] span:first-child',
+      // Trending list in main content (not sidebar)
+      'main [aria-label*="Timeline"] [role="link"] span:first-child',
+      'main section [role="link"]:not([href*="/i/"]) span:first-child',
       
-      // Main content area trending
-      '[data-testid="cellInnerDiv"]:not(:has(time)) [dir="ltr"] span:first-child'
+      // Specific trending content selectors
+      '[data-testid="cellInnerDiv"]:has([href*="/search"]) [dir="ltr"] span:first-child'
     ];
     
     for (const selector of trendingPageSelectors) {
@@ -979,13 +1010,21 @@ class TwitterScraper {
         const elements = await this.driver.findElements(By.css(selector));
         console.log(`Found ${elements.length} elements with trending page selector: ${selector.substring(0, 50)}...`);
         
-        for (let i = 0; i < Math.min(elements.length, 20); i++) {
+        for (let i = 0; i < Math.min(elements.length, 15); i++) {
           try {
             const text = await elements[i].getText();
             
             if (text && text.trim()) {
-              if (this.isActualTrend(text) && this.isValidTrend(text)) {
-                const cleanText = text.trim();
+              const cleanText = text.trim();
+              
+              // Additional check: ensure the element is not in footer or signup areas
+              const parent = await elements[i].findElement(By.xpath('./ancestor::*[contains(@aria-label, "Footer") or contains(@class, "footer") or contains(@aria-label, "Sign up")]')).catch(() => null);
+              if (parent) {
+                console.log(`🚫 Skipping footer/signup element: "${cleanText}"`);
+                continue;
+              }
+              
+              if (this.isActualTrend(cleanText) && this.isValidTrend(cleanText)) {
                 if (!trendingTopics.includes(cleanText) && trendingTopics.length < 15) {
                   trendingTopics.push(cleanText);
                   console.log(`✅ Found trending topic: ${cleanText}`);
@@ -1063,6 +1102,60 @@ class TwitterScraper {
     return trendingTopics;
   }
 
+  // Alternative extraction method using search suggestions
+  async extractTrendsFromSearch() {
+    const trendingTopics = [];
+    
+    console.log('🔍 Trying search-based trend extraction...');
+    
+    try {
+      // Try going to search page and looking for trending suggestions
+      await this.driver.get('https://twitter.com/search');
+      await this.driver.sleep(3000);
+      
+      // Look for search suggestions or trending terms
+      const searchSelectors = [
+        '[data-testid="typeaheadResult"] span',
+        '[role="option"] span:first-child',
+        '.typeahead-result span',
+        '[data-testid="search-bar"] + div span:first-child'
+      ];
+      
+      for (const selector of searchSelectors) {
+        try {
+          const elements = await this.driver.findElements(By.css(selector));
+          
+          for (let i = 0; i < Math.min(elements.length, 10); i++) {
+            try {
+              const text = await elements[i].getText();
+              
+              if (text && text.trim()) {
+                const cleanText = text.trim();
+                if (this.isActualTrend(cleanText) && this.isValidTrend(cleanText)) {
+                  if (!trendingTopics.includes(cleanText)) {
+                    trendingTopics.push(cleanText);
+                    console.log(`✅ Found search trend: ${cleanText}`);
+                  }
+                }
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+        
+        if (trendingTopics.length >= 5) break;
+      }
+      
+    } catch (error) {
+      console.log('Search-based extraction failed:', error.message);
+    }
+    
+    return trendingTopics;
+  }
+
   // Legacy method kept for compatibility
   async extractTrendsFromCurrentPage() {
     // Check current URL to determine which extraction method to use
@@ -1075,14 +1168,67 @@ class TwitterScraper {
     }
   }
 
-  // Additional method to check if text is actually a trend (not news)
+  // Additional method to check if text is actually a trend (not news or UI elements)
   isActualTrend(text) {
     if (!text || typeof text !== 'string') return false;
     
     const cleanText = text.trim();
     
     // Must be reasonably short for a trend
-    if (cleanText.length > 35) return false;
+    if (cleanText.length > 40) return false;
+    if (cleanText.length < 2) return false;
+    
+    // Exclude X/Twitter UI elements and common footer/signup text
+    const uiElements = [
+      /^new to x\??$/i,
+      /^create account$/i,
+      /^sign up$/i,
+      /^log in$/i,
+      /^login$/i,
+      /^terms of service$/i,
+      /^privacy policy$/i,
+      /^cookie\s*(use|policy)\.?$/i,
+      /^help center$/i,
+      /^about$/i,
+      /^download$/i,
+      /^careers$/i,
+      /^developers$/i,
+      /^settings$/i,
+      /^home$/i,
+      /^explore$/i,
+      /^notifications$/i,
+      /^messages$/i,
+      /^bookmarks$/i,
+      /^lists$/i,
+      /^profile$/i,
+      /^more$/i,
+      /^tweet$/i,
+      /^post$/i,
+      /^following$/i,
+      /^followers$/i,
+      /^follow$/i,
+      /^share$/i,
+      /^like$/i,
+      /^retweet$/i,
+      /^reply$/i,
+      /^show more$/i,
+      /^show less$/i,
+      /^what's happening$/i,
+      /^who to follow$/i,
+      /^trending$/i,
+      /^trends for you$/i,
+      /^get verified$/i,
+      /^subscribe$/i,
+      /^premium$/i,
+      /^ads$/i,
+      /^x\.com$/i,
+      /^twitter\.com$/i
+    ];
+    
+    if (uiElements.some(pattern => pattern.test(cleanText))) {
+      console.log(`🚫 Filtered out UI element: "${cleanText}"`);
+      return false;
+    }
     
     // Exclude obvious news indicators
     const newsIndicators = [
@@ -1100,28 +1246,50 @@ class TwitterScraper {
       /AM|PM/i,
       /yesterday|today|tomorrow/i,
       /\d+\s+(hours?|minutes?|days?)\s+ago/i,
-      /BBC|CNN|Reuters|AP|Fox News|NBC|ABC|CBS/i
+      /BBC|CNN|Reuters|AP|Fox News|NBC|ABC|CBS/i,
+      /just now/i,
+      /minutes ago/i,
+      /hours ago/i
     ];
     
     if (newsIndicators.some(pattern => pattern.test(cleanText))) {
+      console.log(`🚫 Filtered out news content: "${cleanText}"`);
       return false;
     }
     
-    // Favor hashtags and short phrases
-    if (cleanText.startsWith('#') || cleanText.length <= 20) {
+    // Hashtags are almost always trends
+    if (cleanText.startsWith('#')) {
+      console.log(`✅ Hashtag trend accepted: "${cleanText}"`);
       return true;
     }
     
-    // Check if it looks like a proper noun or trending topic
+    // Check if it looks like a proper trending topic
     const trendPatterns = [
-      /^[A-Z][a-z]+$/, // Single capitalized word
-      /^[A-Z][a-z]+[A-Z][a-z]*/, // CamelCase
-      /^#\w+/, // Hashtag
-      /^\w+\d+/, // Word with numbers
-      /^[A-Z]{2,}$/ // All caps abbreviation
+      /^[A-Z][a-z]+$/, // Single capitalized word (e.g., "Bitcoin")
+      /^[A-Z][a-z]+[A-Z][a-z]*/, // CamelCase (e.g., "BlackFriday")
+      /^\w+\d+/, // Word with numbers (e.g., "iPhone15")
+      /^[A-Z]{2,}$/, // All caps abbreviation (e.g., "AI", "NASA")
+      /^[A-Z][a-z]+\s+[A-Z][a-z]+$/, // Two capitalized words (e.g., "Taylor Swift")
+      /^\w+\s+\d+$/, // Word + number (e.g., "Episode 5")
+      /^[A-Z]\w*\s+vs\s+[A-Z]\w*$/i, // Competition format (e.g., "Team A vs Team B")
+      /^#?\w+(?:\s+#?\w+){0,2}$/ // 1-3 words, potentially with hashtags
     ];
     
-    return trendPatterns.some(pattern => pattern.test(cleanText));
+    const isValidPattern = trendPatterns.some(pattern => pattern.test(cleanText));
+    
+    if (isValidPattern) {
+      console.log(`✅ Pattern-based trend accepted: "${cleanText}"`);
+      return true;
+    }
+    
+    // Additional check for short meaningful phrases (likely trends)
+    if (cleanText.length <= 20 && /^[A-Za-z0-9\s]+$/.test(cleanText) && !/^\s*$/.test(cleanText)) {
+      console.log(`✅ Short phrase trend accepted: "${cleanText}"`);
+      return true;
+    }
+    
+    console.log(`🚫 Filtered out non-trend: "${cleanText}"`);
+    return false;
   }
 
   async getCurrentIP() {
