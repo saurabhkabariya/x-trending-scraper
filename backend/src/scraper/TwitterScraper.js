@@ -44,19 +44,37 @@ class TwitterScraper {
     // Remote debugging port to prevent DevToolsActivePort issues
     this.options.addArguments('--remote-debugging-port=9222');
     
-    // User data directory for session persistence
+    // User data directory for session persistence (critical for login detection)
     this.options.addArguments('--user-data-dir=./chrome-user-data');
     this.options.addArguments('--profile-directory=Default');
     
     // Window size for better stability
     this.options.addArguments('--window-size=1920,1080');
-    this.options.addArguments('--start-maximized');
     
     if (process.env.NODE_ENV === 'production') {
+      console.log('🏭 Configuring Chrome for production/headless mode...');
       this.options.addArguments('--headless=new');
       this.options.addArguments('--disable-dev-shm-usage');
       this.options.addArguments('--memory-pressure-off');
       this.options.addArguments('--max_old_space_size=4096');
+      this.options.addArguments('--no-zygote');
+      this.options.addArguments('--single-process');
+      this.options.addArguments('--disable-background-networking');
+      this.options.addArguments('--disable-background-timer-throttling');
+      this.options.addArguments('--disable-client-side-phishing-detection');
+      this.options.addArguments('--disable-default-apps');
+      this.options.addArguments('--disable-hang-monitor');
+      this.options.addArguments('--disable-popup-blocking');
+      this.options.addArguments('--disable-prompt-on-repost');
+      this.options.addArguments('--disable-sync');
+      this.options.addArguments('--disable-translate');
+      this.options.addArguments('--metrics-recording-only');
+      this.options.addArguments('--safebrowsing-disable-auto-update');
+      this.options.addArguments('--enable-automation');
+      this.options.addArguments('--password-store=basic');
+      this.options.addArguments('--use-mock-keychain');
+    } else {
+      this.options.addArguments('--start-maximized');
     }
   }
 
@@ -264,65 +282,149 @@ class TwitterScraper {
     try {
       console.log('🔍 Checking for existing login session...');
       
-      // First try to navigate to home page
+      // First check if we have session files (faster check)
+      const hasSessionFiles = await this.hasValidSessionFiles();
+      if (!hasSessionFiles && process.env.NODE_ENV === 'production') {
+        console.log('❌ No valid session files found in production mode');
+        return false;
+      }
+      
+      // First try to navigate to home page with extended timeout for production
       await this.driver.get('https://twitter.com/home');
-      await this.driver.sleep(5000); // Robust delay for production
+      
+      // Extended wait for production/headless mode
+      if (process.env.NODE_ENV === 'production') {
+        await this.driver.sleep(8000); // Longer wait for headless
+      } else {
+        await this.driver.sleep(5000);
+      }
       
       const currentUrl = await this.driver.getCurrentUrl();
       console.log('📍 Current URL after navigation:', currentUrl);
       
-      // Check URL-based indicators
-      if (currentUrl.includes('/home') && !currentUrl.includes('/login') && !currentUrl.includes('/flow')) {
+      // Primary check: If URL doesn't contain login/flow, likely logged in
+      if (currentUrl.includes('/home') && !currentUrl.includes('/login') && !currentUrl.includes('/flow') && !currentUrl.includes('/i/flow')) {
         console.log('🎯 URL indicates potential login, verifying with page elements...');
         
-        // Verify login with multiple element checks (robust approach)
-        const loginIndicators = [
+        // Enhanced login verification with longer timeouts for production
+        const verificationTimeout = process.env.NODE_ENV === 'production' ? 10000 : 5000;
+        
+        // Try multiple verification methods with timeouts
+        const loginVerificationMethods = [
           async () => {
             try {
-              await this.driver.findElement(By.css('[data-testid="SideNav_AccountSwitcher_Button"]'));
+              await this.driver.wait(
+                until.elementLocated(By.css('[data-testid="SideNav_AccountSwitcher_Button"]')),
+                verificationTimeout
+              );
               return 'account switcher';
             } catch { return null; }
           },
           async () => {
             try {
-              await this.driver.findElement(By.css('[data-testid="SideNav_NewTweet_Button"]'));
+              await this.driver.wait(
+                until.elementLocated(By.css('[data-testid="SideNav_NewTweet_Button"]')),
+                verificationTimeout
+              );
               return 'new tweet button';
             } catch { return null; }
           },
           async () => {
             try {
-              await this.driver.findElement(By.css('[aria-label*="Tweet"]'));
+              await this.driver.wait(
+                until.elementLocated(By.css('[aria-label*="Tweet"]')),
+                verificationTimeout
+              );
               return 'tweet button';
             } catch { return null; }
           },
           async () => {
             try {
-              await this.driver.findElement(By.css('[data-testid="primaryColumn"]'));
+              await this.driver.wait(
+                until.elementLocated(By.css('[data-testid="primaryColumn"]')),
+                verificationTimeout
+              );
               return 'primary column';
             } catch { return null; }
           },
           async () => {
             try {
-              await this.driver.findElement(By.css('[data-testid="sidebarColumn"]'));
+              await this.driver.wait(
+                until.elementLocated(By.css('[data-testid="sidebarColumn"]')),
+                verificationTimeout
+              );
               return 'sidebar column';
+            } catch { return null; }
+          },
+          async () => {
+            try {
+              // Check for tweet compose button
+              await this.driver.wait(
+                until.elementLocated(By.css('a[href="/compose/tweet"]')),
+                verificationTimeout
+              );
+              return 'compose tweet link';
+            } catch { return null; }
+          },
+          async () => {
+            try {
+              // Check for home timeline
+              await this.driver.wait(
+                until.elementLocated(By.css('[data-testid="primaryColumn"] section')),
+                verificationTimeout
+              );
+              return 'home timeline';
             } catch { return null; }
           }
         ];
         
-        // Check for any login indicator
-        for (const indicator of loginIndicators) {
-          const result = await indicator();
+        // Try each verification method
+        for (const method of loginVerificationMethods) {
+          const result = await method();
           if (result) {
             console.log(`✅ Login confirmed by: ${result}`);
             
             // Check for and handle security suggestions popup
             await this.handleSecuritySuggestions();
             
+            // Additional check: Ensure we can access trending data
+            try {
+              const trendingCheck = await this.driver.findElements(By.css('[data-testid="sidebarColumn"], [aria-label*="Trending"]'));
+              if (trendingCheck.length > 0) {
+                console.log('✅ Trending section accessible - login confirmed');
+                return true;
+              }
+            } catch (e) {
+              console.log('⚠️ Trending section check failed, but other indicators suggest login');
+            }
+            
             return true;
           }
         }
         
-        console.log('⚠️ URL suggests login but no page elements found');
+        console.log('⚠️ URL suggests login but no page elements found after extended wait');
+        
+        // Fallback: Check page source for login indicators
+        try {
+          const pageSource = await this.driver.getPageSource();
+          const loginIndicators = [
+            'data-testid="SideNav_',
+            'aria-label="Tweet"',
+            'data-testid="primaryColumn"',
+            '"tweet"',
+            '"compose"'
+          ];
+          
+          const foundIndicators = loginIndicators.filter(indicator => pageSource.includes(indicator));
+          if (foundIndicators.length >= 2) {
+            console.log(`✅ Login confirmed by page source analysis (${foundIndicators.length} indicators found)`);
+            await this.handleSecuritySuggestions();
+            return true;
+          }
+        } catch (e) {
+          console.log('⚠️ Page source analysis failed');
+        }
+        
         return false;
       }
       
@@ -331,6 +433,38 @@ class TwitterScraper {
       
     } catch (error) {
       console.log('⚠️ Could not verify login status, will attempt login. Error:', error.message);
+      return false;
+    }
+  }
+
+  async hasValidSessionFiles() {
+    try {
+      const userDataDir = path.join(process.cwd(), 'chrome-user-data');
+      if (!fs.existsSync(userDataDir)) {
+        return false;
+      }
+      
+      // Check for key session files
+      const sessionFiles = [
+        'Default/Cookies',
+        'Default/Local Storage',
+        'Default/Session Storage',
+        'Default/Preferences'
+      ];
+      
+      let foundFiles = 0;
+      for (const file of sessionFiles) {
+        const filePath = path.join(userDataDir, file);
+        if (fs.existsSync(filePath)) {
+          foundFiles++;
+        }
+      }
+      
+      const hasValidSession = foundFiles >= 2;
+      console.log(`📁 Session files check: ${foundFiles}/${sessionFiles.length} files found (valid: ${hasValidSession})`);
+      return hasValidSession;
+    } catch (error) {
+      console.log('⚠️ Session files check failed:', error.message);
       return false;
     }
   }
